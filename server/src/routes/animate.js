@@ -1,14 +1,13 @@
 const cache = new Map()
 const CACHE_TTL = 120_000
-
 const MODELS = ['gemini-2.0-flash-lite', 'gemini-2.0-flash']
 
 export async function setupAnimateRoute(app) {
 
-  app.post('/api/animate/identify', async (req, reply) => {
-    // Tăng timeout cho route này lên 120s
-    req.raw.setTimeout(120_000)
-
+  // Tăng timeout cho Fastify route này
+  app.post('/api/animate/identify', {
+    config: { timeout: 120000 },
+  }, async (req, reply) => {
     const { imageBase64 } = req.body || {}
     if (!imageBase64) return reply.code(400).send({ error: 'Missing imageBase64' })
 
@@ -20,6 +19,7 @@ export async function setupAnimateRoute(app) {
 
     if (!allKeys.length) return reply.code(500).send({ error: 'No GEMINI_API_KEY set' })
 
+    // Cache check
     const cacheKey = imageBase64.slice(0, 120)
     const cached = cache.get(cacheKey)
     if (cached && Date.now() - cached.ts < CACHE_TTL) {
@@ -27,50 +27,41 @@ export async function setupAnimateRoute(app) {
       return reply.send(cached.data)
     }
 
-    // Retry với exponential backoff — đợi đến khi được
-    const MAX_ATTEMPTS = 8
-    const BASE_WAIT = 5000   // 5s lần đầu
-    const MAX_WAIT  = 40000  // tối đa 40s mỗi lần chờ
-
+    // Thử từng key × model, retry với backoff nếu bị limit
+    const MAX_ATTEMPTS = 3
     for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
-      // Thử từng key × từng model
       for (const key of allKeys) {
         for (const model of MODELS) {
           try {
             const result = await callGemini(key, model, imageBase64)
             if (result.rateLimited) {
-              console.log(`[animate] attempt ${attempt+1} key...${key.slice(-4)} ${model}: rate limited`)
+              console.log(`[animate] key...${key.slice(-4)} ${model}: 429`)
               continue
             }
-            // Thành công!
             cache.set(cacheKey, { ts: Date.now(), data: result })
             setTimeout(() => cache.delete(cacheKey), CACHE_TTL)
-            console.log(`[animate] success on attempt ${attempt+1}: "${result.label}" → ${result.behavior}`)
+            console.log(`[animate] OK: "${result.label}" → ${result.behavior}`)
             return reply.send(result)
           } catch (err) {
-            console.error(`[animate] ${model} error:`, err.message.slice(0, 80))
+            console.error(`[animate] ${model}:`, err.message.slice(0, 60))
           }
         }
       }
 
-      // Tất cả key bị limit — tính thời gian chờ theo exponential backoff
-      const waitMs = Math.min(BASE_WAIT * Math.pow(1.8, attempt), MAX_WAIT)
-      console.log(`[animate] all keys rate limited, waiting ${Math.round(waitMs/1000)}s before retry ${attempt+2}/${MAX_ATTEMPTS}...`)
-      await sleep(waitMs)
+      if (attempt < MAX_ATTEMPTS - 1) {
+        const wait = 8000 * (attempt + 1)
+        console.log(`[animate] all limited, wait ${wait/1000}s...`)
+        await sleep(wait)
+      }
     }
 
-    // Sau tất cả retry vẫn fail
-    console.log('[animate] exhausted all retries, returning fallback')
-    return reply.send({
-      type: 'drawing', label: 'object', behavior: 'roam',
-      svg: defaultSVG(), fallback: true,
-    })
+    console.log('[animate] fallback after retries')
+    return reply.send({ type:'drawing', label:'object', behavior:'roam', svg: defaultSVG(), fallback: true })
   })
 }
 
 async function callGemini(apiKey, model, imageBase64) {
   const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`
-
   const res = await fetch(url, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -78,17 +69,15 @@ async function callGemini(apiKey, model, imageBase64) {
       contents: [{
         parts: [
           { inline_data: { mime_type: 'image/png', data: imageBase64 } },
-          { text: `Identify what is drawn or written in this image.
+          { text: `What is in this image? Reply ONLY with JSON (no markdown):
+{"type":"drawing","label":"fish","behavior":"swim","svg":"<svg viewBox=\\"0 0 120 80\\" xmlns=\\"http://www.w3.org/2000/svg\\">...</svg>"}
 
-Reply ONLY with JSON, no markdown:
-{"type":"drawing","label":"fish","behavior":"swim","svg":"<svg viewBox=\\"0 0 120 80\\" xmlns=\\"http://www.w3.org/2000/svg\\">SHAPES_HERE</svg>"}
-
-type: "text" if handwritten words/letters, "drawing" if sketch
-label: word(s) if text, single English noun if drawing
+type: "text" if handwritten words, "drawing" if sketch
+label: the word(s) or single English noun
 behavior: swim|drive|fly|bounce|fall|walk|float|spin|roam
-svg: colorful illustration viewBox="0 0 120 80", no background
+svg: colorful illustration viewBox="0 0 120 80" no background
 
-Behavior: fish/whale→swim, car/truck/train→drive, bird/plane/butterfly→fly, ball/balloon→bounce, star/leaf/snow→fall, person/cat/dog→walk, cloud/ghost→float, flower/sun→spin` }
+fish/whale→swim, car/truck/train→drive, bird/plane→fly, ball/balloon→bounce, star/leaf→fall, person/cat/dog→walk, cloud/ghost→float, flower/sun→spin` }
         ]
       }],
       generationConfig: { temperature: 0.1, maxOutputTokens: 800 }
@@ -109,15 +98,14 @@ Behavior: fish/whale→swim, car/truck/train→drive, bird/plane/butterfly→fly
   const valid = ['swim','drive','fly','bounce','fall','walk','float','spin','roam']
   if (!valid.includes(parsed.behavior)) parsed.behavior = getBehavior(parsed.label, parsed.type)
   if (!parsed.svg?.startsWith('<svg')) parsed.svg = defaultSVG()
-
   return parsed
 }
 
 function getBehavior(label, type) {
   const l = (label || '').toLowerCase()
   if (type === 'text') {
-    if (/fish|whale|shark|swim|ocean|sea/.test(l)) return 'swim'
-    if (/fly|bird|sky|plane|air/.test(l)) return 'fly'
+    if (/fish|whale|swim|ocean|sea/.test(l)) return 'swim'
+    if (/fly|bird|plane|air/.test(l)) return 'fly'
     if (/car|drive|road/.test(l)) return 'drive'
     if (/star|fall|rain|snow|leaf/.test(l)) return 'fall'
     return 'float'
