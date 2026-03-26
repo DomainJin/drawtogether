@@ -35,8 +35,6 @@ app.decorate('redis', pubClient)
 // ── Socket.IO ─────────────────────────────────────────────────────────────────
 const io = new Server(app.server, {
   cors: { origin: CLIENT_URL, methods: ['GET', 'POST'] },
-  // Dùng msgpack để giảm bandwidth ~40%
-  parser: (await import('socket.io-msgpack-parser')).default,
   transports: ['websocket', 'polling'],
 })
 io.adapter(createAdapter(pubClient, subClient))

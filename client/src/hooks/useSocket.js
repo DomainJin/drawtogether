@@ -33,7 +33,7 @@ export function useSocket(roomId, canvasRef) {
     // Tạo socket với JWT token
     socketInstance = io(SERVER_URL, {
       auth: { token },
-      transports: ['websocket'],
+      transports: ['websocket', 'polling'],
     })
 
     socketInstance.on('connect', () => {

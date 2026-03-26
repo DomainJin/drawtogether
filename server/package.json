@@ -17,8 +17,7 @@
     "ioredis": "^5.3.2",
     "nanoid": "^5.0.7",
     "pg": "^8.12.0",
-    "socket.io": "^4.7.5",
-    "msgpackr": "^1.10.2"
+    "socket.io": "^4.7.5"
   },
   "devDependencies": {
     "nodemon": "^3.1.4"

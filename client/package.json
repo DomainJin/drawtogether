@@ -12,9 +12,9 @@
     "react-dom": "^18.3.1",
     "react-router-dom": "^6.24.1",
     "socket.io-client": "^4.7.5",
-    "socket.io-msgpack-parser": "^5.2.0",
     "zustand": "^4.5.4",
-    "nanoid": "^5.0.7"
+    "nanoid": "^5.0.7",
+    "serve": "^14.2.3"
   },
   "devDependencies": {
     "@vitejs/plugin-react": "^4.3.1",
