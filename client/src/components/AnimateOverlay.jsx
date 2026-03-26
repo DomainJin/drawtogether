@@ -236,30 +236,14 @@ export default function AnimateOverlay({ canvasRef, camRef, containerRef }) {
       setStatus('AI đang nhận diện...')
 
       // Gọi Claude API để nhận diện
-      const res = await fetch('https://api.anthropic.com/v1/messages', {
+      const SERVER_URL = import.meta.env.VITE_SERVER_URL || 'http://localhost:3001'
+      const res = await fetch(`${SERVER_URL}/api/animate/identify`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          model: 'claude-sonnet-4-20250514',
-          max_tokens: 100,
-          messages: [{
-            role: 'user',
-            content: [
-              {
-                type: 'image',
-                source: { type: 'base64', media_type: 'image/png', data: base64 }
-              },
-              {
-                type: 'text',
-                text: 'What is drawn in this image? Reply with ONLY one word (the object name in English). Examples: fish, car, bird, person, ball, flower, tree, boat, butterfly, star.'
-              }
-            ]
-          }]
-        })
+        body: JSON.stringify({ imageBase64: base64 })
       })
-
       const data = await res.json()
-      const label = data.content?.[0]?.text?.trim().toLowerCase() || 'object'
+      const label = data.label || 'object'
       const behavior = getBehavior(label)
 
       setStatus(`Nhận diện: "${label}" → ${behavior}`)
