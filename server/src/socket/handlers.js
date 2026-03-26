@@ -14,7 +14,7 @@ const roomPresence = new Map()
 
 export function setupSocketHandlers(io) {
   io.on('connection', (socket) => {
-    socket.setMaxListeners(20)
+    socket.setMaxListeners(50)
     const { userId, displayName, color } = socket.user
     console.log(`[WS] connected: ${displayName} (${socket.id})`)
 

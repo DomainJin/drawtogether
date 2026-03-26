@@ -7,111 +7,122 @@ export async function setupAnimateRoute(app) {
     const apiKey = process.env.GEMINI_API_KEY
     if (!apiKey) return reply.code(500).send({ error: 'GEMINI_API_KEY not set' })
 
-    try {
-      const res = await fetch(
-        `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`,
-        {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            contents: [{
-              parts: [
-                {
-                  inline_data: {
-                    mime_type: 'image/png',
-                    data: imageBase64,
-                  }
-                },
-                {
-                  text: `Analyze this hand-drawn image and respond with JSON only.
+    // Thử lần lượt các model, fallback nếu bị rate limit
+    const models = [
+      'gemini-1.5-flash',
+      'gemini-1.5-flash-8b',
+      'gemini-1.0-pro-vision-latest',
+    ]
 
-Determine:
-- Is it handwritten TEXT (letters/words)? → type="text", label=exact words read
-- Is it a DRAWING/SKETCH? → type="drawing", label=single English noun
-
-Pick behavior:
-swim=fish/whale/sea creatures
-drive=car/truck/vehicle/train
-fly=bird/plane/butterfly/rocket
-bounce=ball/balloon/bubble
-fall=star/leaf/snow/petal
-walk=person/cat/dog/animal
-float=cloud/ghost/jellyfish
-spin=flower/sun/wheel
-roam=anything else
-
-Create SVG viewBox="0 0 120 80":
-- For text: large centered <text> element, bold, colorful, font-size 32-40
-- For drawing: colorful illustration, vivid colors, recognizable shapes
-
-Respond ONLY with this JSON structure, no markdown:
-{"type":"drawing","label":"fish","behavior":"swim","svg":"<svg viewBox=\\"0 0 120 80\\" xmlns=\\"http://www.w3.org/2000/svg\\">...</svg>"}`
-                }
-              ]
-            }],
-            generationConfig: {
-              temperature: 0.4,
-              maxOutputTokens: 1500,
-            }
-          })
-        }
-      )
-
-      if (!res.ok) {
-        const err = await res.text()
-        console.error('[animate] Gemini error:', res.status, err)
-        return reply.code(500).send({ error: `Gemini API error ${res.status}: ${err.slice(0, 200)}` })
-      }
-
-      const data = await res.json()
-      let text = data.candidates?.[0]?.content?.parts?.[0]?.text || ''
-      console.log('[animate] raw:', text.slice(0, 200))
-
-      // Strip markdown nếu có
-      text = text.replace(/^```json\s*/i, '').replace(/^```\s*/,'').replace(/\s*```$/,'').trim()
-
-      let parsed
+    let lastError = ''
+    for (const model of models) {
       try {
-        parsed = JSON.parse(text)
-      } catch (e) {
-        console.error('[animate] parse error:', e.message, '| raw:', text.slice(0, 300))
-        return reply.send({ type: 'drawing', label: 'object', behavior: 'roam', svg: null })
+        const result = await callGemini(apiKey, model, imageBase64)
+        if (result.rateLimited) {
+          console.log(`[animate] ${model} rate limited, trying next...`)
+          lastError = result.error
+          continue
+        }
+        return reply.send(result)
+      } catch (err) {
+        lastError = err.message
+        console.error(`[animate] ${model} error:`, err.message)
       }
-
-      // Validate behavior
-      const valid = ['swim','drive','fly','bounce','fall','walk','float','spin','roam']
-      if (!valid.includes(parsed.behavior)) {
-        parsed.behavior = getBehavior(parsed.label, parsed.type)
-      }
-
-      console.log('[animate]', parsed.type, parsed.label, '→', parsed.behavior, '| svg:', !!parsed.svg)
-      return reply.send(parsed)
-
-    } catch (err) {
-      console.error('[animate] exception:', err)
-      return reply.code(500).send({ error: err.message })
     }
+
+    // Tất cả bị rate limit — trả fallback thay vì crash
+    console.log('[animate] all models rate limited, using fallback')
+    return reply.send({
+      type: 'drawing',
+      label: 'object',
+      behavior: 'roam',
+      svg: null,
+      fallback: true,
+      error: lastError,
+    })
   })
+}
+
+async function callGemini(apiKey, model, imageBase64) {
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`
+
+  const res = await fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      contents: [{
+        parts: [
+          { inline_data: { mime_type: 'image/png', data: imageBase64 } },
+          { text: `Analyze this hand-drawn image. Respond with JSON only, no markdown.
+
+Rules:
+- If handwritten TEXT/words: type="text", label=exact words
+- If DRAWING/sketch: type="drawing", label=one English noun
+
+Behavior options:
+swim(fish/whale/sea), drive(car/truck/train), fly(bird/plane/butterfly),
+bounce(ball/balloon), fall(star/leaf/snow), walk(person/cat/dog),
+float(cloud/ghost), spin(flower/sun), roam(other)
+
+SVG rules: viewBox="0 0 120 80", colorful, no background rect
+- text type: <text> centered, font-size="36", bold, colorful fill
+- drawing type: colorful illustration with shapes
+
+JSON format:
+{"type":"drawing","label":"fish","behavior":"swim","svg":"<svg viewBox=\\"0 0 120 80\\" xmlns=\\"http://www.w3.org/2000/svg\\">...</svg>"}` }
+        ]
+      }],
+      generationConfig: { temperature: 0.3, maxOutputTokens: 1200 }
+    })
+  })
+
+  if (res.status === 429) {
+    const body = await res.text()
+    return { rateLimited: true, error: `429 rate limit on ${model}` }
+  }
+
+  if (!res.ok) {
+    const body = await res.text()
+    throw new Error(`${res.status}: ${body.slice(0, 150)}`)
+  }
+
+  const data = await res.json()
+  let text = (data.candidates?.[0]?.content?.parts?.[0]?.text || '').trim()
+  text = text.replace(/^```json\s*/i,'').replace(/^```\s*/,'').replace(/\s*```$/,'').trim()
+
+  let parsed
+  try {
+    parsed = JSON.parse(text)
+  } catch {
+    console.error(`[animate] parse error for ${model}:`, text.slice(0, 200))
+    return { type: 'drawing', label: 'object', behavior: 'roam', svg: null }
+  }
+
+  const valid = ['swim','drive','fly','bounce','fall','walk','float','spin','roam']
+  if (!valid.includes(parsed.behavior)) {
+    parsed.behavior = getBehavior(parsed.label, parsed.type)
+  }
+
+  console.log(`[animate] ${model}: ${parsed.type} "${parsed.label}" → ${parsed.behavior} | svg:${!!parsed.svg}`)
+  return parsed
 }
 
 function getBehavior(label, type) {
   const l = (label || '').toLowerCase()
-
   if (type === 'text') {
     if (/whale|fish|shark|swim|ocean|sea|water/.test(l)) return 'swim'
     if (/fly|bird|sky|plane|air|cloud/.test(l)) return 'fly'
-    if (/car|drive|race|fast|road|speed/.test(l)) return 'drive'
+    if (/car|drive|race|road|speed/.test(l)) return 'drive'
     if (/star|fall|rain|snow|leaf/.test(l)) return 'fall'
     if (/bounce|ball|jump/.test(l)) return 'bounce'
     return 'float'
   }
-
   if (/fish|whale|shark|dolphin|seal|squid|octopus|tuna|salmon|crab/.test(l)) return 'swim'
-  if (/car|truck|bus|train|bike|motorcycle|vehicle|van|jeep|taxi|tractor/.test(l)) return 'drive'
+  if (/car|truck|bus|train|bike|motorcycle|vehicle|van|jeep|taxi/.test(l)) return 'drive'
   if (/bird|butterfly|bee|plane|airplane|ufo|dragon|eagle|owl|bat|kite/.test(l)) return 'fly'
   if (/ball|balloon|bubble|sphere/.test(l)) return 'bounce'
   if (/star|leaf|snowflake|petal|feather|rain|snow/.test(l)) return 'fall'
-  if (/person|human|man|woman|boy|girl|stick|cat|dog|rabbit|bear|fox/.test(l)) return 'walk'
+  if (/person|human|man|woman|boy|girl|stick|cat|dog|rabbit|bear/.test(l)) return 'walk'
   if (/cloud|jellyfish|ghost|smoke/.test(l)) return 'float'
   if (/flower|sun|wheel|spiral/.test(l)) return 'spin'
   return 'roam'
