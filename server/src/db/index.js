@@ -5,15 +5,31 @@ const { Pool } = pg
 let pool
 
 export async function setupDatabase() {
+  const connectionString = process.env.DATABASE_URL || 'postgresql://whiteboard:whiteboard@localhost:5432/whiteboard'
+
   pool = new Pool({
-    connectionString: process.env.DATABASE_URL || 'postgresql://whiteboard:whiteboard@localhost:5432/whiteboard',
+    connectionString,
     max: 20,
     idleTimeoutMillis: 30000,
+    connectionTimeoutMillis: 5000,
+    // Railway PostgreSQL dùng SSL
+    ssl: process.env.DATABASE_URL ? { rejectUnauthorized: false } : false,
   })
 
-  // Test connection
-  const client = await pool.connect()
-  client.release()
+  // Test connection với retry
+  let retries = 5
+  while (retries > 0) {
+    try {
+      const client = await pool.connect()
+      client.release()
+      break
+    } catch (err) {
+      retries--
+      if (retries === 0) throw err
+      console.log(`DB connection failed, retrying... (${retries} left)`)
+      await new Promise(r => setTimeout(r, 3000))
+    }
+  }
 
   await runMigrations()
   console.log('✅ Database connected')
@@ -58,8 +74,6 @@ async function runMigrations() {
   `)
 }
 
-// ── Queries ───────────────────────────────────────────────────────────────────
-
 export async function createUser(displayName, color) {
   const { rows } = await pool.query(
     'INSERT INTO users (display_name, color) VALUES ($1, $2) RETURNING *',
@@ -98,10 +112,8 @@ export async function saveStroke(stroke) {
 export async function getRoomStrokes(roomId, limit = 5000) {
   const { rows } = await pool.query(
     `SELECT id, user_id, tool, color, width, opacity, points, created_at
-     FROM strokes
-     WHERE room_id = $1
-     ORDER BY created_at ASC
-     LIMIT $2`,
+     FROM strokes WHERE room_id = $1
+     ORDER BY created_at ASC LIMIT $2`,
     [roomId, limit]
   )
   return rows
@@ -109,13 +121,10 @@ export async function getRoomStrokes(roomId, limit = 5000) {
 
 export async function undoLastStroke(roomId, userId) {
   const { rows } = await pool.query(
-    `DELETE FROM strokes
-     WHERE id = (
-       SELECT id FROM strokes
-       WHERE room_id = $1 AND user_id = $2
+    `DELETE FROM strokes WHERE id = (
+       SELECT id FROM strokes WHERE room_id = $1 AND user_id = $2
        ORDER BY created_at DESC LIMIT 1
-     )
-     RETURNING id`,
+     ) RETURNING id`,
     [roomId, userId]
   )
   return rows[0]?.id || null
