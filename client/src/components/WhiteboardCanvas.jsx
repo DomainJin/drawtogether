@@ -1,10 +1,10 @@
 import { useEffect, useRef, useCallback } from 'react'
 import { useStore } from '../store/index.js'
-import { getSocket, renderStroke } from '../hooks/useSocket.js'
+import { getSocket } from '../hooks/useSocket.js'
 import { nanoid } from 'nanoid'
 
 const CURSOR_THROTTLE_MS = 32
-const CANVAS_SIZE = 4000 // canvas logic lớn, scroll trong đó
+const CANVAS_SIZE = 4000
 
 export default function WhiteboardCanvas({ canvasRef, viewportRef }) {
   const { tool, color, width, opacity } = useStore()
@@ -12,47 +12,33 @@ export default function WhiteboardCanvas({ canvasRef, viewportRef }) {
   const currentPoints = useRef([])
   const currentStrokeId = useRef(null)
   const lastCursorEmit = useRef(0)
-  const isPanning = useRef(false)
-  const panStart = useRef({ x: 0, y: 0, scrollLeft: 0, scrollTop: 0 })
+  const activeTouches = useRef(0)
 
-  // Resize canvas một lần
   useEffect(() => {
     const canvas = canvasRef.current
     if (!canvas) return
     canvas.width = CANVAS_SIZE
     canvas.height = CANVAS_SIZE
+    const ctx = canvas.getContext('2d')
+    ctx.fillStyle = '#fafafa'
+    ctx.fillRect(0, 0, CANVAS_SIZE, CANVAS_SIZE)
   }, [canvasRef])
 
-  // Lắng nghe remote undo/clear
   useEffect(() => {
     const canvas = canvasRef.current
     if (!canvas) return
     const handleClear = () => {
-      canvas.getContext('2d').clearRect(0, 0, CANVAS_SIZE, CANVAS_SIZE)
+      const ctx = canvas.getContext('2d')
+      ctx.fillStyle = '#fafafa'
+      ctx.fillRect(0, 0, CANVAS_SIZE, CANVAS_SIZE)
     }
     canvas.addEventListener('remote:clear', handleClear)
     return () => canvas.removeEventListener('remote:clear', handleClear)
   }, [canvasRef])
 
-  // Đồng bộ scroll từ remote
-  useEffect(() => {
-    const canvas = canvasRef.current
-    if (!canvas) return
-    const handleScroll = (e) => {
-      const vp = viewportRef.current
-      if (!vp) return
-      vp.scrollLeft = e.detail.x
-      vp.scrollTop = e.detail.y
-    }
-    canvas.addEventListener('remote:scroll', handleScroll)
-    return () => canvas.removeEventListener('remote:scroll', handleScroll)
-  }, [canvasRef, viewportRef])
-
-  // Lấy toạ độ canvas từ pointer/touch (tính offset scroll)
-  const getPos = useCallback((e) => {
+  // Lấy toạ độ canvas (tính scroll offset)
+  const getPos = useCallback((clientX, clientY) => {
     const vp = viewportRef.current
-    const clientX = e.touches ? e.touches[0].clientX : e.clientX
-    const clientY = e.touches ? e.touches[0].clientY : e.clientY
     const rect = vp.getBoundingClientRect()
     return {
       x: clientX - rect.left + vp.scrollLeft,
@@ -60,19 +46,18 @@ export default function WhiteboardCanvas({ canvasRef, viewportRef }) {
     }
   }, [viewportRef])
 
-  // ── Vẽ local (realtime, không chờ server) ────────────────────────────────
-  const drawLocal = useCallback((points) => {
+  const drawSegment = useCallback((points) => {
     const canvas = canvasRef.current
     if (!canvas || points.length < 2) return
     const ctx = canvas.getContext('2d')
     const i = points.length - 2
     ctx.save()
     ctx.globalAlpha = opacity
-    ctx.strokeStyle = tool === 'eraser' ? 'rgba(250,250,250,1)' : color
+    ctx.strokeStyle = tool === 'eraser' ? '#fafafa' : color
     ctx.lineWidth = width
     ctx.lineCap = 'round'
     ctx.lineJoin = 'round'
-    if (tool === 'eraser') ctx.globalCompositeOperation = 'destination-out'
+    if (tool === 'eraser') ctx.globalCompositeOperation = 'source-over'
     ctx.beginPath()
     if (points.length === 2) {
       ctx.moveTo(points[0].x, points[0].y)
@@ -87,66 +72,106 @@ export default function WhiteboardCanvas({ canvasRef, viewportRef }) {
     ctx.restore()
   }, [tool, color, width, opacity])
 
-  // ── Pointer events ────────────────────────────────────────────────────────
-  const onPointerDown = useCallback((e) => {
-    // Chỉ vẽ bằng 1 ngón, nếu 2 ngón thì pan
-    if (e.touches && e.touches.length === 2) {
-      isPanning.current = true
-      return
-    }
-    e.preventDefault()
+  // ── Mouse events (PC) ─────────────────────────────────────────────────────
+  const onMouseDown = useCallback((e) => {
+    if (e.button !== 0) return
     isDrawing.current = true
-    currentPoints.current = [getPos(e)]
+    currentPoints.current = [getPos(e.clientX, e.clientY)]
     currentStrokeId.current = nanoid()
   }, [getPos])
 
-  const onPointerMove = useCallback((e) => {
-    // Pan bằng 2 ngón tay
-    if (e.touches && e.touches.length === 2) {
-      return // pinch-to-zoom hoặc 2-finger pan — bỏ qua vẽ
-    }
-
-    const pos = getPos(e)
+  const onMouseMove = useCallback((e) => {
+    const pos = getPos(e.clientX, e.clientY)
     const socket = getSocket()
     const now = Date.now()
-
-    // Emit cursor (throttled)
     if (socket && now - lastCursorEmit.current > CURSOR_THROTTLE_MS) {
       socket.emit('cursor:move', pos)
       lastCursorEmit.current = now
     }
-
     if (!isDrawing.current) return
-    e.preventDefault()
-
     currentPoints.current.push(pos)
-    drawLocal(currentPoints.current)
-
-    // Gửi preview mỗi 3 điểm
+    drawSegment(currentPoints.current)
     if (socket && currentPoints.current.length % 3 === 0) {
       socket.emit('draw:preview', {
-        id: currentStrokeId.current,
-        tool, color, width, opacity,
+        id: currentStrokeId.current, tool, color, width, opacity,
         points: currentPoints.current.slice(-4),
       })
     }
-  }, [getPos, drawLocal, tool, color, width, opacity])
+  }, [getPos, drawSegment, tool, color, width, opacity])
 
-  const onPointerUp = useCallback(() => {
-    isPanning.current = false
+  const onMouseUp = useCallback(() => {
     if (!isDrawing.current) return
     isDrawing.current = false
-
     const points = currentPoints.current
-    if (points.length < 2) return
-
-    const stroke = {
-      id: currentStrokeId.current,
-      tool, color, width, opacity, points,
+    if (points.length >= 2) {
+      getSocket()?.emit('draw:stroke', {
+        id: currentStrokeId.current, tool, color, width, opacity, points,
+      })
     }
-    getSocket()?.emit('draw:stroke', stroke)
     currentPoints.current = []
   }, [tool, color, width, opacity])
+
+  // ── Touch events (Mobile) ─────────────────────────────────────────────────
+  // 1 ngón = vẽ, 2+ ngón = scroll (browser tự xử lý vì touchAction: 'pan-x pan-y')
+  const onTouchStart = useCallback((e) => {
+    activeTouches.current = e.touches.length
+    if (e.touches.length !== 1) {
+      // 2+ ngón: dừng vẽ, để browser scroll
+      if (isDrawing.current) {
+        isDrawing.current = false
+        currentPoints.current = []
+      }
+      return
+    }
+    e.preventDefault() // chặn scroll khi 1 ngón để vẽ
+    const t = e.touches[0]
+    isDrawing.current = true
+    currentPoints.current = [getPos(t.clientX, t.clientY)]
+    currentStrokeId.current = nanoid()
+  }, [getPos])
+
+  const onTouchMove = useCallback((e) => {
+    if (e.touches.length !== 1 || !isDrawing.current) return
+    e.preventDefault()
+    const t = e.touches[0]
+    const pos = getPos(t.clientX, t.clientY)
+    currentPoints.current.push(pos)
+    drawSegment(currentPoints.current)
+    const socket = getSocket()
+    if (socket && currentPoints.current.length % 3 === 0) {
+      socket.emit('draw:preview', {
+        id: currentStrokeId.current, tool, color, width, opacity,
+        points: currentPoints.current.slice(-4),
+      })
+    }
+  }, [getPos, drawSegment, tool, color, width, opacity])
+
+  const onTouchEnd = useCallback((e) => {
+    activeTouches.current = e.touches.length
+    if (!isDrawing.current) return
+    isDrawing.current = false
+    const points = currentPoints.current
+    if (points.length >= 2) {
+      getSocket()?.emit('draw:stroke', {
+        id: currentStrokeId.current, tool, color, width, opacity, points,
+      })
+    }
+    currentPoints.current = []
+  }, [tool, color, width, opacity])
+
+  // Gắn touch events với passive:false để preventDefault hoạt động
+  useEffect(() => {
+    const canvas = canvasRef.current
+    if (!canvas) return
+    canvas.addEventListener('touchstart', onTouchStart, { passive: false })
+    canvas.addEventListener('touchmove', onTouchMove, { passive: false })
+    canvas.addEventListener('touchend', onTouchEnd, { passive: true })
+    return () => {
+      canvas.removeEventListener('touchstart', onTouchStart)
+      canvas.removeEventListener('touchmove', onTouchMove)
+      canvas.removeEventListener('touchend', onTouchEnd)
+    }
+  }, [canvasRef, onTouchStart, onTouchMove, onTouchEnd])
 
   // Undo Ctrl+Z
   useEffect(() => {
@@ -163,23 +188,18 @@ export default function WhiteboardCanvas({ canvasRef, viewportRef }) {
   return (
     <canvas
       ref={canvasRef}
-      width={CANVAS_SIZE}
-      height={CANVAS_SIZE}
       style={{
         display: 'block',
         width: CANVAS_SIZE,
         height: CANVAS_SIZE,
         cursor: tool === 'eraser' ? 'cell' : 'crosshair',
-        touchAction: 'none',
-        background: '#fafafa',
+        // touchAction pan cho phép 2-ngón scroll, 1-ngón bị chặn bởi preventDefault
+        touchAction: 'pan-x pan-y',
       }}
-      onPointerDown={onPointerDown}
-      onPointerMove={onPointerMove}
-      onPointerUp={onPointerUp}
-      onPointerLeave={onPointerUp}
-      onTouchStart={onPointerDown}
-      onTouchMove={onPointerMove}
-      onTouchEnd={onPointerUp}
+      onMouseDown={onMouseDown}
+      onMouseMove={onMouseMove}
+      onMouseUp={onMouseUp}
+      onMouseLeave={onMouseUp}
     />
   )
 }

@@ -1,14 +1,14 @@
-import { useEffect, useRef } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { useStore } from '../store/index.js'
-import { useSocket } from '../hooks/useSocket.js'
+import { useSocket, getSocket } from '../hooks/useSocket.js'
 import WhiteboardCanvas from '../components/WhiteboardCanvas.jsx'
 import Toolbar from '../components/Toolbar.jsx'
 import CursorOverlay from '../components/CursorOverlay.jsx'
 import UserList from '../components/UserList.jsx'
-import { getSocket } from '../hooks/useSocket.js'
 
-const SCROLL_THROTTLE = 100
+const CANVAS_SIZE = 4000
+const SCROLL_THROTTLE = 80
 
 export default function WhiteboardPage() {
   const { roomId } = useParams()
@@ -18,6 +18,7 @@ export default function WhiteboardPage() {
   const navigate = useNavigate()
   const lastScrollEmit = useRef(0)
   const isRemoteScrolling = useRef(false)
+  const [uiVisible, setUiVisible] = useState(true)
 
   useEffect(() => {
     if (!token) navigate('/', { replace: true })
@@ -33,16 +34,19 @@ export default function WhiteboardPage() {
     }
   }, [])
 
-  // Bắt đầu ở giữa canvas
+  // Scroll về giữa canvas lúc load
   useEffect(() => {
     const vp = viewportRef.current
     if (!vp) return
-    // Center scroll
-    vp.scrollLeft = (4000 - window.innerWidth) / 2
-    vp.scrollTop = (4000 - window.innerHeight) / 2
+    const center = () => {
+      vp.scrollLeft = (CANVAS_SIZE - vp.clientWidth) / 2
+      vp.scrollTop = (CANVAS_SIZE - vp.clientHeight) / 2
+    }
+    // Đợi layout xong
+    requestAnimationFrame(center)
   }, [])
 
-  // Emit scroll position để đồng bộ với người khác
+  // Emit scroll để đồng bộ
   useEffect(() => {
     const vp = viewportRef.current
     if (!vp) return
@@ -51,10 +55,7 @@ export default function WhiteboardPage() {
       const now = Date.now()
       if (now - lastScrollEmit.current < SCROLL_THROTTLE) return
       lastScrollEmit.current = now
-      getSocket()?.emit('viewport:scroll', {
-        x: vp.scrollLeft,
-        y: vp.scrollTop,
-      })
+      getSocket()?.emit('viewport:scroll', { x: vp.scrollLeft, y: vp.scrollTop })
     }
     vp.addEventListener('scroll', onScroll, { passive: true })
     return () => vp.removeEventListener('scroll', onScroll)
@@ -89,7 +90,7 @@ export default function WhiteboardPage() {
 
   const handleCopyLink = () => {
     navigator.clipboard.writeText(window.location.href)
-    alert('Đã copy link! Gửi cho bạn bè để vẽ cùng.')
+    alert('Đã copy link!')
   }
 
   if (!token) return null
@@ -100,88 +101,133 @@ export default function WhiteboardPage() {
       position: 'fixed', top: 0, left: 0,
       overflow: 'hidden', background: '#e8e8e8',
     }}>
-      {/* Header */}
-      <div style={{
-        position: 'absolute', top: 12, left: '50%', transform: 'translateX(-50%)',
-        display: 'flex', alignItems: 'center', gap: 10,
-        background: 'rgba(255,255,255,0.95)', backdropFilter: 'blur(12px)',
-        border: '1px solid rgba(0,0,0,0.08)', borderRadius: 12,
-        padding: '8px 16px', zIndex: 200,
-        boxShadow: '0 4px 24px rgba(0,0,0,0.08)',
-        whiteSpace: 'nowrap',
-      }}>
-        <span style={{ fontSize: 18 }}>🎨</span>
-        <span style={{ fontWeight: 600, fontSize: 14 }}>{room?.name || roomId}</span>
-        <button onClick={handleCopyLink} style={{
-          fontSize: 12, padding: '4px 10px', borderRadius: 6,
-          border: '1px solid rgba(0,0,0,0.12)', background: 'transparent',
-          cursor: 'pointer', color: '#378ADD',
-        }}>📋 Copy link</button>
-      </div>
 
-      {/* Scrollable viewport — đây là "cửa sổ" nhìn vào canvas lớn */}
+      {/* ── Scrollable viewport ────────────────────────────────────────── */}
       <div
         ref={viewportRef}
         style={{
           position: 'absolute', inset: 0,
-          overflow: 'scroll',
-          // Ẩn scrollbar nhưng vẫn scroll được
+          overflow: 'auto',           // 'auto' thay 'scroll' — mobile cần auto
+          WebkitOverflowScrolling: 'touch', // iOS momentum scroll
           scrollbarWidth: 'none',
           msOverflowStyle: 'none',
         }}
       >
-        <style>{`div::-webkit-scrollbar { display: none; }`}</style>
+        <style>{`
+          div::-webkit-scrollbar { display: none; }
+        `}</style>
 
-        {/* Canvas layer */}
-        <div style={{ position: 'relative', width: 4000, height: 4000 }}>
+        <div style={{ position: 'relative', width: CANVAS_SIZE, height: CANVAS_SIZE }}>
           <WhiteboardCanvas canvasRef={canvasRef} viewportRef={viewportRef} />
-          <CursorOverlay canvasRef={canvasRef} viewportRef={viewportRef} />
+          <CursorOverlay canvasRef={canvasRef} />
         </div>
       </div>
 
-      {/* Mini-map indicator (tuỳ chọn) */}
-      <ScrollIndicator viewportRef={viewportRef} />
+      {/* ── Toggle UI button (luôn hiện) ──────────────────────────────── */}
+      <button
+        onClick={() => setUiVisible(v => !v)}
+        style={{
+          position: 'fixed', top: 12, right: 12, zIndex: 300,
+          width: 36, height: 36, borderRadius: 8,
+          background: 'rgba(255,255,255,0.95)',
+          border: '1px solid rgba(0,0,0,0.1)',
+          cursor: 'pointer', fontSize: 16,
+          boxShadow: '0 2px 8px rgba(0,0,0,0.1)',
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+        }}
+        title={uiVisible ? 'Ẩn toolbar' : 'Hiện toolbar'}
+      >
+        {uiVisible ? '👁' : '✏️'}
+      </button>
 
-      <UserList />
-      <Toolbar onExport={handleExport} />
+      {/* ── UI elements (ẩn/hiện) ─────────────────────────────────────── */}
+      {uiVisible && (
+        <>
+          {/* Header */}
+          <div style={{
+            position: 'fixed', top: 12, left: '50%', transform: 'translateX(-50%)',
+            display: 'flex', alignItems: 'center', gap: 8,
+            background: 'rgba(255,255,255,0.95)', backdropFilter: 'blur(12px)',
+            border: '1px solid rgba(0,0,0,0.08)', borderRadius: 12,
+            padding: '7px 14px', zIndex: 200,
+            boxShadow: '0 2px 12px rgba(0,0,0,0.08)',
+            whiteSpace: 'nowrap', maxWidth: 'calc(100vw - 120px)',
+          }}>
+            <span style={{ fontSize: 16 }}>🎨</span>
+            <span style={{ fontWeight: 600, fontSize: 13, overflow: 'hidden', textOverflow: 'ellipsis' }}>
+              {room?.name || roomId}
+            </span>
+            <button onClick={handleCopyLink} style={{
+              fontSize: 11, padding: '3px 8px', borderRadius: 5,
+              border: '1px solid rgba(0,0,0,0.12)', background: 'transparent',
+              cursor: 'pointer', color: '#378ADD', whiteSpace: 'nowrap',
+            }}>📋 Copy</button>
+          </div>
+
+          <UserList />
+          <Toolbar onExport={handleExport} />
+        </>
+      )}
+
+      {/* Mini-map luôn hiện */}
+      <MiniMap viewportRef={viewportRef} canvasSize={CANVAS_SIZE} />
     </div>
   )
 }
 
-// Chấm nhỏ góc phải dưới cho biết đang ở đâu trên canvas
-function ScrollIndicator({ viewportRef }) {
+function MiniMap({ viewportRef, canvasSize }) {
   const dotRef = useRef(null)
+  const MAP_SIZE = 56
+
   useEffect(() => {
     const vp = viewportRef.current
     if (!vp) return
     const update = () => {
       const dot = dotRef.current
       if (!dot) return
-      const px = (vp.scrollLeft / 4000) * 100
-      const py = (vp.scrollTop / 4000) * 100
-      dot.style.left = px + '%'
-      dot.style.top = py + '%'
+      const vw = vp.clientWidth / canvasSize
+      const vh = vp.clientHeight / canvasSize
+      const px = (vp.scrollLeft / canvasSize) * MAP_SIZE
+      const py = (vp.scrollTop / canvasSize) * MAP_SIZE
+      dot.style.left = px + 'px'
+      dot.style.top = py + 'px'
+      dot.style.width = (vw * MAP_SIZE) + 'px'
+      dot.style.height = (vh * MAP_SIZE) + 'px'
     }
     vp.addEventListener('scroll', update, { passive: true })
     update()
     return () => vp.removeEventListener('scroll', update)
-  }, [viewportRef])
+  }, [viewportRef, canvasSize])
+
+  // Click minimap để jump
+  const onClick = (e) => {
+    const vp = viewportRef.current
+    const rect = e.currentTarget.getBoundingClientRect()
+    const px = (e.clientX - rect.left) / MAP_SIZE
+    const py = (e.clientY - rect.top) / MAP_SIZE
+    vp.scrollLeft = px * canvasSize - vp.clientWidth / 2
+    vp.scrollTop = py * canvasSize - vp.clientHeight / 2
+  }
 
   return (
-    <div style={{
-      position: 'fixed', bottom: 90, right: 16,
-      width: 60, height: 60,
-      background: 'rgba(255,255,255,0.8)',
-      border: '1px solid rgba(0,0,0,0.1)',
-      borderRadius: 8, zIndex: 100,
-      overflow: 'hidden',
-    }}>
+    <div
+      onClick={onClick}
+      style={{
+        position: 'fixed', bottom: 80, right: 12,
+        width: MAP_SIZE, height: MAP_SIZE,
+        background: 'rgba(255,255,255,0.85)',
+        border: '1px solid rgba(0,0,0,0.12)',
+        borderRadius: 6, zIndex: 100,
+        overflow: 'hidden', cursor: 'pointer',
+      }}
+      title="Click để nhảy tới vùng đó"
+    >
       <div ref={dotRef} style={{
         position: 'absolute',
-        width: '25%', height: '25%',
-        background: 'rgba(55,138,221,0.4)',
+        background: 'rgba(55,138,221,0.35)',
+        border: '1px solid rgba(55,138,221,0.6)',
         borderRadius: 2,
-        transition: 'left 0.1s, top 0.1s',
+        minWidth: 4, minHeight: 4,
       }} />
     </div>
   )
