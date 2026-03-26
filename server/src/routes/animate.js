@@ -9,9 +9,9 @@ export async function setupAnimateRoute(app) {
 
     // Thử lần lượt các model, fallback nếu bị rate limit
     const models = [
-      'gemini-1.5-flash',
-      'gemini-1.5-flash-8b',
-      'gemini-1.0-pro-vision-latest',
+      'gemini-2.0-flash-lite',
+      'gemini-2.0-flash',
+      'gemini-1.5-flash-latest',
     ]
 
     let lastError = ''

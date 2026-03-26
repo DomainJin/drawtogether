@@ -89,6 +89,7 @@ export function useSocket(roomId, canvasRef) {
     })
 
     // Nhận scroll từ remote → dispatch event để WhiteboardPage xử lý
+    socketInstance.off('viewport:scroll')
     socketInstance.on('viewport:scroll', ({ x, y }) => {
       canvasRef.current?.dispatchEvent(new CustomEvent('remote:scroll', { detail: { x, y } }))
     })
