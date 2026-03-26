@@ -332,9 +332,11 @@ export default function WhiteboardPage() {
 
           <UserList />
           <Toolbar onExport={handleExport} />
-          <AnimateOverlay canvasRef={canvasRef} camRef={cam} containerRef={containerRef} />
         </>
       )}
+
+      {/* AnimateOverlay luôn hiển thị, không phụ thuộc uiVisible */}
+      <AnimateOverlay canvasRef={canvasRef} camRef={cam} containerRef={containerRef} />
 
       <MiniMap camRef={cam} canvasSize={CANVAS_SIZE} containerRef={containerRef} zoom={zoom} />
     </div>
