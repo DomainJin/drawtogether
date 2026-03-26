@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, useCallback } from 'react'
+import { getSocket } from '../hooks/useSocket.js'
 
 const SERVER_URL = import.meta.env.VITE_SERVER_URL || 'http://localhost:3001'
 
@@ -219,6 +220,33 @@ export default function AnimateOverlay({ canvasRef, camRef, containerRef }) {
   const selStart = useRef(null)
   const [spriteCount, setSpriteCount] = useState(0)
 
+  // Lắng nghe sprite từ người khác
+  useEffect(() => {
+    const socket = getSocket()
+    if (!socket) return
+
+    const handleSpriteAdd = (data) => {
+      const { svgString, x, y, w, h, behavior, label, id } = data
+      // Tránh duplicate
+      if (spritesRef.current.find(s => s.id === id)) return
+      const sprite = new Sprite({ id, svgString, pixelImageData: null, x, y, w, h, behavior, label })
+      spritesRef.current.push(sprite)
+      setSpriteCount(c => c + 1)
+    }
+
+    const handleSpriteClear = () => {
+      spritesRef.current = []
+      setSpriteCount(0)
+    }
+
+    socket.on('sprite:add', handleSpriteAdd)
+    socket.on('sprite:clear', handleSpriteClear)
+    return () => {
+      socket.off('sprite:add', handleSpriteAdd)
+      socket.off('sprite:clear', handleSpriteClear)
+    }
+  }, [])
+
   // Animation loop
   useEffect(() => {
     const overlay = overlayRef.current
@@ -372,8 +400,20 @@ export default function AnimateOverlay({ canvasRef, camRef, containerRef }) {
       spritesRef.current.push(sprite)
       setSpriteCount(c => c + 1)
 
+      // Broadcast sprite cho các user khác
+      const socket = getSocket()
+      if (socket) {
+        socket.emit('sprite:add', {
+          id: sprite.id,
+          svgString,
+          x: startX, y: startY,
+          w: spriteW, h: spriteH,
+          behavior, label,
+        })
+      }
+
       // Xóa vùng khỏi canvas tĩnh
-      const ctx = canvas.getContext('2d')
+      const ctx = canvas.getContext('2d', { willReadFrequently: true })
       ctx.fillStyle = '#ffffff'
       ctx.fillRect(px, py, pw, ph)
 
@@ -426,7 +466,11 @@ export default function AnimateOverlay({ canvasRef, camRef, containerRef }) {
 
       {spriteCount > 0 && (
         <button
-          onClick={() => { spritesRef.current = []; setSpriteCount(0) }}
+          onClick={() => {
+          spritesRef.current = []
+          setSpriteCount(0)
+          getSocket()?.emit('sprite:clear')
+        }}
           style={{
             position: 'fixed', bottom: 90, left: 174, zIndex: 300,
             height: 34, padding: '0 10px', borderRadius: 8,

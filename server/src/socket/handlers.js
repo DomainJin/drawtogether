@@ -23,6 +23,20 @@ export function setupSocketHandlers(io) {
       if (!roomId) return
       socket.to(roomId).emit('viewport:scroll', { ...data, socketId: socket.id })
     })
+
+    // ── ANIMATE SPRITE — broadcast cho tất cả user trong phòng ───────────────
+    socket.on('sprite:add', (sprite) => {
+      const roomId = socket.currentRoom
+      if (!roomId) return
+      // Broadcast sprite đến tất cả người khác trong phòng
+      socket.to(roomId).emit('sprite:add', { ...sprite, fromSocketId: socket.id })
+    })
+
+    socket.on('sprite:clear', () => {
+      const roomId = socket.currentRoom
+      if (!roomId) return
+      socket.to(roomId).emit('sprite:clear', { fromSocketId: socket.id })
+    })
     const { userId, displayName, color } = socket.user
     console.log(`[WS] connected: ${displayName} (${socket.id})`)
 
