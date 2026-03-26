@@ -29,13 +29,14 @@ export function setupSocketHandlers(io, redis) {
       const roomId = socket.currentRoom
       if (!roomId) return
 
-      // Lưu vào Redis (danh sách sprites của room)
+      // Lưu vào Redis (tối đa 50 sprites mỗi phòng)
       if (redis) {
         try {
           const key = `sprites:${roomId}`
           const spriteData = JSON.stringify({ ...sprite, fromSocketId: socket.id, ts: Date.now() })
           await redis.rpush(key, spriteData)
-          await redis.expire(key, 60 * 60 * 24) // TTL 24h
+          await redis.ltrim(key, -50, -1) // giữ 50 sprite mới nhất
+          await redis.expire(key, 60 * 60 * 24)
         } catch (e) {
           console.error('[sprite:add] redis error:', e.message)
         }

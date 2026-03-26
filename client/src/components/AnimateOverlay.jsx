@@ -240,31 +240,28 @@ export default function AnimateOverlay({ canvasRef, camRef, containerRef }) {
     const handleHistoryAdd = (e) => addSprite(e.detail)
     canvas?.addEventListener('remote:sprite:add', handleHistoryAdd)
 
-    // Đợi socket sẵn sàng rồi mới attach listeners
-    let socket = null
-    const attachSocket = () => {
-      socket = getSocket()
-      if (!socket) return
-      socket.off('sprite:add', addSprite)
-      socket.off('sprite:clear', clearSprites)
-      socket.on('sprite:add', addSprite)
-      socket.on('sprite:clear', clearSprites)
+    // Attach socket listeners — dùng named ref để không duplicate
+    let attached = false
+    let attachedSocket = null
+
+    const tryAttach = () => {
+      const s = getSocket()
+      if (!s || attached) return
+      attached = true
+      attachedSocket = s
+      s.on('sprite:add', addSprite)
+      s.on('sprite:clear', clearSprites)
+      clearInterval(interval)
     }
 
-    // Thử ngay và retry mỗi 500ms cho đến khi có socket
-    attachSocket()
-    const interval = setInterval(() => {
-      if (getSocket()) {
-        attachSocket()
-        clearInterval(interval)
-      }
-    }, 500)
+    tryAttach()
+    const interval = setInterval(tryAttach, 300)
 
     return () => {
       clearInterval(interval)
-      if (socket) {
-        socket.off('sprite:add', addSprite)
-        socket.off('sprite:clear', clearSprites)
+      if (attachedSocket) {
+        attachedSocket.off('sprite:add', addSprite)
+        attachedSocket.off('sprite:clear', clearSprites)
       }
       canvas?.removeEventListener('remote:sprite:add', handleHistoryAdd)
     }
@@ -495,9 +492,14 @@ export default function AnimateOverlay({ canvasRef, camRef, containerRef }) {
       {spriteCount > 0 && (
         <button
           onClick={() => {
-          spritesRef.current = []
-          setSpriteCount(0)
-          getSocket()?.emit('sprite:clear')
+          const socket = getSocket()
+          if (socket && socket.connected) {
+            socket.emit('sprite:clear') // server sẽ broadcast clear cho tất cả
+          } else {
+            // fallback local
+            spritesRef.current = []
+            setSpriteCount(0)
+          }
         }}
           style={{
             position: 'fixed', bottom: 90, left: 174, zIndex: 300,
