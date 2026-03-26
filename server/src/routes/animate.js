@@ -8,7 +8,8 @@ export async function setupAnimateRoute(app) {
     if (!apiKey) return reply.code(500).send({ error: 'ANTHROPIC_API_KEY not set' })
 
     try {
-      const res = await fetch('https://api.anthropic.com/v1/messages', {
+      // Pass 1: nhận diện object/text
+      const identifyRes = await fetch('https://api.anthropic.com/v1/messages', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -17,55 +18,103 @@ export async function setupAnimateRoute(app) {
         },
         body: JSON.stringify({
           model: 'claude-haiku-4-5-20251001',
-          max_tokens: 1500,
+          max_tokens: 200,
           messages: [{
             role: 'user',
             content: [
-              {
-                type: 'image',
-                source: { type: 'base64', media_type: 'image/png', data: imageBase64 }
-              },
-              {
-                type: 'text',
-                text: `Analyze this hand-drawn image carefully.
+              { type: 'image', source: { type: 'base64', media_type: 'image/png', data: imageBase64 } },
+              { type: 'text', text: `Look at this image. Is it:
+A) Handwritten text/words/letters → reply: TEXT: [the exact words you read]
+B) A drawn object/sketch → reply: OBJECT: [one English noun, e.g. fish, car, star, person, bird, whale, balloon, flower]
 
-STEP 1 - Detect if it contains handwritten text/letters:
-- If YES (contains readable words/letters): set type="text", label=the exact word(s) read
-- If NO (it's a drawing/sketch): set type="drawing", label=one English noun describing what's drawn
-
-STEP 2 - Choose behavior based on what you identified:
-Behaviors: "swim" (fish/sea creatures), "drive" (vehicles/cars/trucks), "fly" (birds/planes/butterflies/balloons), "bounce" (balls/bubbles), "fall" (stars/leaves/snow/petals), "walk" (people/animals/stick figures), "spin" (stars/flowers/abstract), "float" (clouds/jellyfish/ghosts), "roam" (anything else)
-
-STEP 3 - Create SVG:
-- If type="text": create an SVG with the text rendered beautifully (decorative font style, colorful, maybe with relevant small icons)
-- If type="drawing": create a clean beautiful SVG illustration of the object
-
-SVG rules:
-- viewBox="0 0 120 80" exactly
-- Use vivid colors matching the object
-- For text SVGs: use <text> element with large font, decorative style, gradient fill or stroke effects
-- For drawing SVGs: use shapes to create recognizable illustration
-- NO background rect
-
-Respond ONLY with this JSON (no markdown, no explanation):
-{"type":"drawing","label":"fish","behavior":"swim","svg":"<svg viewBox=\\"0 0 120 80\\" xmlns=\\"http://www.w3.org/2000/svg\\">...</svg>"}`
-              }
+Reply with ONLY one line in the format above, nothing else.` }
             ]
           }]
         })
       })
 
-      const data = await res.json()
-      let text = (data.content?.[0]?.text || '{}').trim()
-      text = text.replace(/^```json\s*/,'').replace(/^```\s*/,'').replace(/\s*```$/,'').trim()
+      const identData = await identifyRes.json()
+      const identText = (identData.content?.[0]?.text || '').trim()
+      console.log('[animate] identify result:', identText)
 
-      let parsed
-      try { parsed = JSON.parse(text) }
-      catch { parsed = { type: 'drawing', label: 'object', behavior: 'roam', svg: null } }
+      let type = 'drawing'
+      let label = 'object'
 
-      return reply.send(parsed)
+      if (identText.startsWith('TEXT:')) {
+        type = 'text'
+        label = identText.replace('TEXT:', '').trim()
+      } else if (identText.startsWith('OBJECT:')) {
+        type = 'drawing'
+        label = identText.replace('OBJECT:', '').trim().toLowerCase().split(/\s+/)[0]
+      }
+
+      // Map label → behavior
+      const behavior = getBehavior(label, type)
+      console.log('[animate] label:', label, 'type:', type, 'behavior:', behavior)
+
+      // Pass 2: sinh SVG đẹp
+      const svgPrompt = type === 'text'
+        ? `Create a beautiful decorative SVG of the text "${label}". 
+Rules: viewBox="0 0 160 60", use <text> with large bold font (font-size="36"), 
+apply a colorful gradient fill or bright stroke, maybe add small decorative elements around the text.
+The text should be centered and clearly readable. No background.
+Reply with ONLY the SVG tag, nothing else.`
+        : `Create a clean colorful SVG illustration of a "${label}".
+Rules: viewBox="0 0 120 80", use simple shapes (path/circle/rect/ellipse/polygon),
+vivid appropriate colors (fish=orange, sky=blue, car=red/gray, star=yellow, etc),
+recognizable silhouette, small details, no background rect, no text.
+Reply with ONLY the SVG tag, nothing else.`
+
+      const svgRes = await fetch('https://api.anthropic.com/v1/messages', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-api-key': apiKey,
+          'anthropic-version': '2023-06-01',
+        },
+        body: JSON.stringify({
+          model: 'claude-haiku-4-5-20251001',
+          max_tokens: 1000,
+          messages: [{ role: 'user', content: svgPrompt }]
+        })
+      })
+
+      const svgData = await svgRes.json()
+      let svg = (svgData.content?.[0]?.text || '').trim()
+      svg = svg.replace(/^```svg\s*/,'').replace(/^```xml\s*/,'').replace(/^```\s*/,'').replace(/\s*```$/,'').trim()
+
+      // Validate svg
+      if (!svg.startsWith('<svg')) svg = null
+
+      return reply.send({ type, label, behavior, svg })
+
     } catch (err) {
+      console.error('[animate] error:', err)
       return reply.code(500).send({ error: err.message })
     }
   })
+}
+
+function getBehavior(label, type) {
+  if (type === 'text') {
+    // Chữ animate theo nội dung
+    const l = label.toLowerCase()
+    if (/whale|fish|shark|swim|ocean|sea|water/.test(l)) return 'swim'
+    if (/fly|bird|sky|plane|air|cloud/.test(l)) return 'fly'
+    if (/car|drive|race|fast|road|speed/.test(l)) return 'drive'
+    if (/star|fall|rain|snow|leaf/.test(l)) return 'fall'
+    if (/bounce|ball|jump/.test(l)) return 'bounce'
+    return 'float' // text mặc định float
+  }
+
+  const l = label.toLowerCase()
+  if (/fish|whale|shark|dolphin|seal|squid|octopus|tuna|salmon|crab/.test(l)) return 'swim'
+  if (/car|truck|bus|train|bike|motorcycle|vehicle|van|jeep|taxi|rocket/.test(l)) return 'drive'
+  if (/bird|butterfly|bee|plane|airplane|ufo|dragon|eagle|owl|bat|kite/.test(l)) return 'fly'
+  if (/ball|balloon|bubble|sphere|orb/.test(l)) return 'bounce'
+  if (/star|leaf|snowflake|petal|feather|rain|snow/.test(l)) return 'fall'
+  if (/person|human|man|woman|boy|girl|stick|cat|dog|rabbit|bear/.test(l)) return 'walk'
+  if (/cloud|jellyfish|ghost|smoke|spirit/.test(l)) return 'float'
+  if (/flower|sun|wheel|spiral/.test(l)) return 'spin'
+  return 'roam'
 }

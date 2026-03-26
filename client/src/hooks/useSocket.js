@@ -34,6 +34,13 @@ export function useSocket(roomId, canvasRef) {
     socketInstance = io(SERVER_URL, {
       auth: { token },
       transports: ['websocket', 'polling'],
+      reconnection: true,
+      reconnectionAttempts: Infinity,
+      reconnectionDelay: 1000,
+      reconnectionDelayMax: 5000,
+      // Ping để giữ kết nối không bị Railway timeout
+      pingInterval: 25000,
+      pingTimeout: 20000,
     })
 
     socketInstance.on('connect', () => {

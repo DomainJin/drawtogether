@@ -305,7 +305,7 @@ export default function AnimateOverlay({ canvasRef, camRef, containerRef }) {
       if (pw < 10 || ph < 10) { setLoading(false); return }
 
       // Lấy pixel data để gửi AI
-      const imageData = canvas.getContext('2d').getImageData(px, py, pw, ph)
+      const imageData = canvas.getContext('2d', { willReadFrequently: true }).getImageData(px, py, pw, ph)
       const tmp = document.createElement('canvas')
       tmp.width = pw; tmp.height = ph
       tmp.getContext('2d').putImageData(imageData, 0, 0)
@@ -319,11 +319,16 @@ export default function AnimateOverlay({ canvasRef, camRef, containerRef }) {
         body: JSON.stringify({ imageBase64: base64 })
       })
       const data = await res.json()
+      console.log('[Animate] AI response:', data)
 
       const label = data.label || 'object'
-      const behavior = data.behavior || getBehavior(label)
+      // Dùng behavior từ server trước, fallback sang local map
+      const behavior = data.behavior && data.behavior !== 'roam'
+        ? data.behavior
+        : getBehavior(label)
       const svgString = data.svg || null
 
+      console.log('[Animate] label:', label, '| behavior:', behavior, '| hasSVG:', !!svgString)
       setStatus(`"${label}" → ${behavior} ✨`)
 
       // Kích thước sprite trên màn hình
