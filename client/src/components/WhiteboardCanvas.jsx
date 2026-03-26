@@ -19,7 +19,7 @@ export default function WhiteboardCanvas({ canvasRef, containerRef, camRef }) {
     if (!canvas) return
     canvas.width = CANVAS_SIZE
     canvas.height = CANVAS_SIZE
-    const ctx = canvas.getContext('2d')
+    const ctx = canvas.getContext('2d', { willReadFrequently: true })
     ctx.fillStyle = '#ffffff'
     ctx.fillRect(0, 0, CANVAS_SIZE, CANVAS_SIZE)
   }, [canvasRef])

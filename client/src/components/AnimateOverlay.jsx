@@ -318,17 +318,33 @@ export default function AnimateOverlay({ canvasRef, camRef, containerRef }) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ imageBase64: base64 })
       })
-      const data = await res.json()
-      console.log('[Animate] AI response:', data)
+
+      const rawText = await res.text()
+      console.log('[Animate] raw server response:', rawText)
+
+      let data
+      try {
+        data = JSON.parse(rawText)
+      } catch(e) {
+        console.error('[Animate] JSON parse error:', e)
+        setStatus('Lỗi parse response')
+        setLoading(false)
+        return
+      }
+
+      console.log('[Animate] parsed:', data)
+
+      if (data.error) {
+        setStatus('Server lỗi: ' + data.error)
+        setLoading(false)
+        return
+      }
 
       const label = data.label || 'object'
-      // Dùng behavior từ server trước, fallback sang local map
-      const behavior = data.behavior && data.behavior !== 'roam'
-        ? data.behavior
-        : getBehavior(label)
+      const behavior = data.behavior || getBehavior(label)
       const svgString = data.svg || null
 
-      console.log('[Animate] label:', label, '| behavior:', behavior, '| hasSVG:', !!svgString)
+      console.log('[Animate] FINAL → label:', label, '| behavior:', behavior, '| hasSVG:', !!svgString)
       setStatus(`"${label}" → ${behavior} ✨`)
 
       // Kích thước sprite trên màn hình
