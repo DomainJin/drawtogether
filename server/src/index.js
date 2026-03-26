@@ -12,9 +12,9 @@ import { setupDatabase } from './db/index.js'
 const PORT = process.env.PORT || 3001
 const CLIENT_URL = process.env.CLIENT_URL || 'http://localhost:5173'
 const JWT_SECRET = process.env.JWT_SECRET || 'dev-secret-change-in-production'
-const REDIS_URL = process.env.REDIS_URL || 'redis://localhost:6379'
+const REDIS_URL = process.env.REDIS_URL || null
 
-// ── Fastify ──────────────────────────────────────────────────────────────────
+// ── Fastify ───────────────────────────────────────────────────────────────────
 const app = Fastify({ logger: { level: 'info' } })
 
 await app.register(cors, {
@@ -26,17 +26,35 @@ await app.register(jwt, { secret: JWT_SECRET })
 // ── Database ──────────────────────────────────────────────────────────────────
 await setupDatabase()
 
-// ── Redis ─────────────────────────────────────────────────────────────────────
-const pubClient = new Redis(REDIS_URL)
-const subClient = pubClient.duplicate()
-app.decorate('redis', pubClient)
-
 // ── Socket.IO ─────────────────────────────────────────────────────────────────
 const io = new Server(app.server, {
   cors: { origin: CLIENT_URL, methods: ['GET', 'POST'] },
   transports: ['websocket', 'polling'],
 })
-io.adapter(createAdapter(pubClient, subClient))
+
+// ── Redis (tuỳ chọn — nếu có REDIS_URL thì dùng adapter để scale) ─────────────
+if (REDIS_URL) {
+  try {
+    const pubClient = new Redis(REDIS_URL, {
+      maxRetriesPerRequest: null,
+      enableReadyCheck: false,
+      lazyConnect: true,
+    })
+    const subClient = pubClient.duplicate()
+
+    pubClient.on('error', (err) => console.warn('[Redis pub] error:', err.message))
+    subClient.on('error', (err) => console.warn('[Redis sub] error:', err.message))
+
+    await Promise.all([pubClient.connect(), subClient.connect()])
+    io.adapter(createAdapter(pubClient, subClient))
+    app.decorate('redis', pubClient)
+    console.log('✅ Redis connected')
+  } catch (err) {
+    console.warn('⚠️  Redis unavailable, running without pub/sub adapter:', err.message)
+  }
+} else {
+  console.log('ℹ️  No REDIS_URL set, skipping Redis adapter (single instance mode)')
+}
 
 // Middleware xác thực token trước khi connect
 io.use(async (socket, next) => {
@@ -50,7 +68,7 @@ io.use(async (socket, next) => {
   }
 })
 
-setupSocketHandlers(io, pubClient)
+setupSocketHandlers(io)
 
 // ── HTTP Routes ───────────────────────────────────────────────────────────────
 app.get('/health', async () => ({ status: 'ok', ts: Date.now() }))

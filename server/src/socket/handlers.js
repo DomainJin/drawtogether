@@ -12,7 +12,7 @@ import { nanoid } from 'nanoid'
 // Theo dõi presence: roomId -> Map<socketId, userInfo>
 const roomPresence = new Map()
 
-export function setupSocketHandlers(io, redis) {
+export function setupSocketHandlers(io) {
   io.on('connection', (socket) => {
     const { userId, displayName, color } = socket.user
     console.log(`[WS] connected: ${displayName} (${socket.id})`)

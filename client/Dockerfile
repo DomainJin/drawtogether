@@ -10,14 +10,22 @@ RUN npm install
 COPY . .
 RUN npm run build
 
-# Production: nginx serve static files
+# Stage 2: nginx serve static
 FROM nginx:stable-alpine
 COPY --from=builder /app/dist /usr/share/nginx/html
 
-# SPA fallback config, Railway inject PORT via env
-RUN mkdir -p /etc/nginx/templates && \
-    printf 'server {\n  listen ${PORT};\n  root /usr/share/nginx/html;\n  index index.html;\n  location / { try_files $uri $uri/ /index.html; }\n}\n' \
-    > /etc/nginx/templates/default.conf.template
+# Config SPA - dùng port 80 cố định, Railway map qua domain
+RUN rm /etc/nginx/conf.d/default.conf && \
+    printf 'server {\n\
+  listen 80;\n\
+  root /usr/share/nginx/html;\n\
+  index index.html;\n\
+  gzip on;\n\
+  gzip_types text/plain text/css application/javascript application/json;\n\
+  location / {\n\
+    try_files $uri $uri/ /index.html;\n\
+  }\n\
+}\n' > /etc/nginx/conf.d/app.conf
 
-ENV PORT=3000
-EXPOSE 3000
+EXPOSE 80
+CMD ["nginx", "-g", "daemon off;"]
