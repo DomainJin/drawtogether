@@ -8,21 +8,28 @@ import CursorOverlay from '../components/CursorOverlay.jsx'
 import UserList from '../components/UserList.jsx'
 
 const CANVAS_SIZE = 4000
-const MIN_ZOOM = 0.1
-const MAX_ZOOM = 5
-const SCROLL_THROTTLE = 80
+const MIN_ZOOM = 0.05
+const MAX_ZOOM = 8
 
 export default function WhiteboardPage() {
   const { roomId } = useParams()
   const { token, room } = useStore()
   const canvasRef = useRef(null)
-  const viewportRef = useRef(null)
-  const zoomRef = useRef(1)
-  const [zoom, setZoom] = useState(1)
+  const stageRef = useRef(null)       // div bọc canvas, ta transform cái này
+  const containerRef = useRef(null)   // viewport cố định full screen
   const navigate = useNavigate()
-  const lastScrollEmit = useRef(0)
-  const isRemoteScrolling = useRef(false)
   const [uiVisible, setUiVisible] = useState(true)
+
+  // Camera state: { x, y, zoom } — x,y là offset pan
+  const cam = useRef({ x: 0, y: 0, zoom: 1 })
+  const [zoom, setZoom] = useState(1)
+
+  // Gesture state
+  const isPanning = useRef(false)
+  const panStart = useRef({ mx: 0, my: 0, cx: 0, cy: 0 })
+  const lastPinchDist = useRef(null)
+  const lastPinchMid = useRef(null)
+  const spaceDown = useRef(false)
 
   useEffect(() => {
     if (!token) navigate('/', { replace: true })
@@ -38,100 +45,180 @@ export default function WhiteboardPage() {
     }
   }, [])
 
-  // Scroll về giữa lúc load
+  // Bắt đầu ở giữa canvas
   useEffect(() => {
-    const vp = viewportRef.current
-    if (!vp) return
+    const el = containerRef.current
+    if (!el) return
     requestAnimationFrame(() => {
-      vp.scrollLeft = (CANVAS_SIZE - vp.clientWidth) / 2
-      vp.scrollTop = (CANVAS_SIZE - vp.clientHeight) / 2
+      const cx = el.clientWidth / 2 - CANVAS_SIZE / 2
+      const cy = el.clientHeight / 2 - CANVAS_SIZE / 2
+      cam.current = { x: cx, y: cy, zoom: 1 }
+      applyTransform()
     })
   }, [])
 
-  // Xử lý zoom từ canvas (pinch gesture)
-  useEffect(() => {
-    const vp = viewportRef.current
-    if (!vp) return
-    const handle = (e) => {
-      const { zoom: newZoom, pivotX, pivotY, oldZoom } = e.detail
-      // Giữ điểm pivot cố định khi zoom
-      const scrollX = (vp.scrollLeft + pivotX) * (newZoom / oldZoom) - pivotX
-      const scrollY = (vp.scrollTop + pivotY) * (newZoom / oldZoom) - pivotY
-      zoomRef.current = newZoom
-      setZoom(newZoom)
-      requestAnimationFrame(() => {
-        vp.scrollLeft = scrollX
-        vp.scrollTop = scrollY
-      })
-    }
-    vp.addEventListener('zoom:change', handle)
-    return () => vp.removeEventListener('zoom:change', handle)
+  const applyTransform = useCallback(() => {
+    const stage = stageRef.current
+    if (!stage) return
+    const { x, y, zoom: z } = cam.current
+    stage.style.transform = `translate(${x}px, ${y}px) scale(${z})`
+    setZoom(z)
   }, [])
 
-  // Wheel zoom (PC: Ctrl + scroll)
+  // ── Zoom vào điểm (clientX, clientY) ─────────────────────────────────────
+  const zoomAt = useCallback((clientX, clientY, factor) => {
+    const el = containerRef.current
+    if (!el) return
+    const rect = el.getBoundingClientRect()
+    const px = clientX - rect.left   // điểm trong container
+    const py = clientY - rect.top
+
+    const oldZ = cam.current.zoom
+    const newZ = Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, oldZ * factor))
+    const scale = newZ / oldZ
+
+    // Giữ điểm (px,py) cố định: new_offset = px - scale*(px - old_offset)
+    cam.current.x = px - scale * (px - cam.current.x)
+    cam.current.y = py - scale * (py - cam.current.y)
+    cam.current.zoom = newZ
+    applyTransform()
+  }, [applyTransform])
+
+  // ── PC: Ctrl+Wheel zoom, Middle-click pan, Space+drag pan ─────────────────
   useEffect(() => {
-    const vp = viewportRef.current
-    if (!vp) return
+    const el = containerRef.current
+    if (!el) return
+
     const onWheel = (e) => {
-      if (!e.ctrlKey && !e.metaKey) return
       e.preventDefault()
-      const rect = vp.getBoundingClientRect()
-      const pivotX = e.clientX - rect.left
-      const pivotY = e.clientY - rect.top
-      const oldZoom = zoomRef.current
-      const delta = e.deltaY < 0 ? 1.1 : 0.9
-      const newZoom = Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, oldZoom * delta))
-      const scrollX = (vp.scrollLeft + pivotX) * (newZoom / oldZoom) - pivotX
-      const scrollY = (vp.scrollTop + pivotY) * (newZoom / oldZoom) - pivotY
-      zoomRef.current = newZoom
-      setZoom(newZoom)
-      requestAnimationFrame(() => {
-        vp.scrollLeft = scrollX
-        vp.scrollTop = scrollY
-      })
+      if (e.ctrlKey || e.metaKey) {
+        // Pinch-to-zoom trên trackpad
+        const factor = e.deltaY < 0 ? 1.08 : 1 / 1.08
+        zoomAt(e.clientX, e.clientY, factor)
+      } else {
+        // Pan
+        cam.current.x -= e.deltaX
+        cam.current.y -= e.deltaY
+        applyTransform()
+      }
     }
-    vp.addEventListener('wheel', onWheel, { passive: false })
-    return () => vp.removeEventListener('wheel', onWheel)
+
+    const onKeyDown = (e) => {
+      if (e.code === 'Space' && !e.target.matches('input,textarea')) {
+        spaceDown.current = true
+        el.style.cursor = 'grab'
+        e.preventDefault()
+      }
+    }
+    const onKeyUp = (e) => {
+      if (e.code === 'Space') {
+        spaceDown.current = false
+        el.style.cursor = ''
+      }
+    }
+
+    el.addEventListener('wheel', onWheel, { passive: false })
+    window.addEventListener('keydown', onKeyDown)
+    window.addEventListener('keyup', onKeyUp)
+    return () => {
+      el.removeEventListener('wheel', onWheel)
+      window.removeEventListener('keydown', onKeyDown)
+      window.removeEventListener('keyup', onKeyUp)
+    }
+  }, [zoomAt, applyTransform])
+
+  // ── PC: Space+drag pan & middle-click pan ────────────────────────────────
+  const onMouseDown = useCallback((e) => {
+    if (e.button === 1 || spaceDown.current) {
+      e.preventDefault()
+      isPanning.current = true
+      panStart.current = { mx: e.clientX, my: e.clientY, cx: cam.current.x, cy: cam.current.y }
+      containerRef.current.style.cursor = 'grabbing'
+    }
   }, [])
 
-  // Emit scroll
-  useEffect(() => {
-    const vp = viewportRef.current
-    if (!vp) return
-    const onScroll = () => {
-      if (isRemoteScrolling.current) return
-      const now = Date.now()
-      if (now - lastScrollEmit.current < SCROLL_THROTTLE) return
-      lastScrollEmit.current = now
-      getSocket()?.emit('viewport:scroll', { x: vp.scrollLeft, y: vp.scrollTop, zoom: zoomRef.current })
+  const onMouseMove = useCallback((e) => {
+    if (!isPanning.current) return
+    cam.current.x = panStart.current.cx + (e.clientX - panStart.current.mx)
+    cam.current.y = panStart.current.cy + (e.clientY - panStart.current.my)
+    applyTransform()
+  }, [applyTransform])
+
+  const onMouseUp = useCallback(() => {
+    isPanning.current = false
+    containerRef.current.style.cursor = spaceDown.current ? 'grab' : ''
+  }, [])
+
+  // ── Mobile: 1 ngón → canvas xử lý vẽ, 2 ngón → pinch zoom + pan ─────────
+  const onTouchStart = useCallback((e) => {
+    if (e.touches.length === 2) {
+      e.preventDefault()
+      const t1 = e.touches[0], t2 = e.touches[1]
+      const dx = t1.clientX - t2.clientX
+      const dy = t1.clientY - t2.clientY
+      lastPinchDist.current = Math.sqrt(dx*dx + dy*dy)
+      lastPinchMid.current = {
+        x: (t1.clientX + t2.clientX) / 2,
+        y: (t1.clientY + t2.clientY) / 2,
+      }
     }
-    vp.addEventListener('scroll', onScroll, { passive: true })
-    return () => vp.removeEventListener('scroll', onScroll)
+  }, [])
+
+  const onTouchMove = useCallback((e) => {
+    if (e.touches.length !== 2) return
+    e.preventDefault()
+    const t1 = e.touches[0], t2 = e.touches[1]
+    const dx = t1.clientX - t2.clientX
+    const dy = t1.clientY - t2.clientY
+    const newDist = Math.sqrt(dx*dx + dy*dy)
+    const newMid = {
+      x: (t1.clientX + t2.clientX) / 2,
+      y: (t1.clientY + t2.clientY) / 2,
+    }
+
+    if (lastPinchDist.current && lastPinchMid.current) {
+      const scaleFactor = newDist / lastPinchDist.current
+
+      // Zoom vào điểm giữa 2 ngón
+      const el = containerRef.current
+      const rect = el.getBoundingClientRect()
+      const pivotX = newMid.x - rect.left
+      const pivotY = newMid.y - rect.top
+      const oldZ = cam.current.zoom
+      const newZ = Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, oldZ * scaleFactor))
+      const s = newZ / oldZ
+      cam.current.x = pivotX - s * (pivotX - cam.current.x)
+      cam.current.y = pivotY - s * (pivotY - cam.current.y)
+      cam.current.zoom = newZ
+
+      // Pan theo di chuyển điểm giữa
+      const panDx = newMid.x - lastPinchMid.current.x
+      const panDy = newMid.y - lastPinchMid.current.y
+      cam.current.x += panDx
+      cam.current.y += panDy
+
+      applyTransform()
+    }
+
+    lastPinchDist.current = newDist
+    lastPinchMid.current = newMid
+  }, [applyTransform])
+
+  const onTouchEnd = useCallback((e) => {
+    if (e.touches.length < 2) {
+      lastPinchDist.current = null
+      lastPinchMid.current = null
+    }
   }, [])
 
   useSocket(roomId, canvasRef)
 
-  // Nhận scroll/zoom từ remote
-  useEffect(() => {
-    const canvas = canvasRef.current
-    if (!canvas) return
-    const handle = (e) => {
-      const vp = viewportRef.current
-      if (!vp) return
-      isRemoteScrolling.current = true
-      if (e.detail.zoom !== undefined && e.detail.zoom !== zoomRef.current) {
-        zoomRef.current = e.detail.zoom
-        setZoom(e.detail.zoom)
-      }
-      requestAnimationFrame(() => {
-        vp.scrollLeft = e.detail.x
-        vp.scrollTop = e.detail.y
-        setTimeout(() => { isRemoteScrolling.current = false }, 200)
-      })
-    }
-    canvas.addEventListener('remote:scroll', handle)
-    return () => canvas.removeEventListener('remote:scroll', handle)
-  }, [])
+  // Zoom buttons
+  const doZoom = useCallback((factor) => {
+    const el = containerRef.current
+    if (!el) return
+    zoomAt(el.clientWidth / 2, el.clientHeight / 2, factor)
+  }, [zoomAt])
 
   const handleExport = () => {
     const canvas = canvasRef.current
@@ -142,73 +229,41 @@ export default function WhiteboardPage() {
     link.click()
   }
 
-  const handleCopyLink = () => {
-    navigator.clipboard.writeText(window.location.href)
-    alert('Đã copy link!')
-  }
-
-  const handleZoomIn = () => {
-    const newZoom = Math.min(MAX_ZOOM, zoomRef.current * 1.25)
-    applyZoom(newZoom)
-  }
-  const handleZoomOut = () => {
-    const newZoom = Math.max(MIN_ZOOM, zoomRef.current / 1.25)
-    applyZoom(newZoom)
-  }
-  const handleZoomReset = () => applyZoom(1)
-
-  const applyZoom = useCallback((newZoom) => {
-    const vp = viewportRef.current
-    if (!vp) return
-    const pivotX = vp.clientWidth / 2
-    const pivotY = vp.clientHeight / 2
-    const oldZoom = zoomRef.current
-    const scrollX = (vp.scrollLeft + pivotX) * (newZoom / oldZoom) - pivotX
-    const scrollY = (vp.scrollTop + pivotY) * (newZoom / oldZoom) - pivotY
-    zoomRef.current = newZoom
-    setZoom(newZoom)
-    requestAnimationFrame(() => {
-      vp.scrollLeft = scrollX
-      vp.scrollTop = scrollY
-    })
-  }, [])
-
   if (!token) return null
 
   return (
-    <div style={{
-      width: '100vw', height: '100dvh',
-      position: 'fixed', top: 0, left: 0,
-      overflow: 'hidden', background: '#d0d0d0',
-    }}>
-      {/* Scrollable viewport */}
+    <div
+      ref={containerRef}
+      style={{
+        width: '100vw', height: '100dvh',
+        position: 'fixed', top: 0, left: 0,
+        overflow: 'hidden',
+        background: '#e0e0e0',
+        userSelect: 'none',
+        WebkitUserSelect: 'none',
+      }}
+      onMouseDown={onMouseDown}
+      onMouseMove={onMouseMove}
+      onMouseUp={onMouseUp}
+      onMouseLeave={onMouseUp}
+      onTouchStart={onTouchStart}
+      onTouchMove={onTouchMove}
+      onTouchEnd={onTouchEnd}
+    >
+      {/* Canvas layer — transform ở đây */}
       <div
-        ref={viewportRef}
+        ref={stageRef}
         style={{
-          position: 'absolute', inset: 0,
-          overflow: 'auto',
-          WebkitOverflowScrolling: 'touch',
-          scrollbarWidth: 'none',
-          msOverflowStyle: 'none',
+          position: 'absolute',
+          top: 0, left: 0,
+          width: CANVAS_SIZE,
+          height: CANVAS_SIZE,
+          transformOrigin: '0 0',
+          willChange: 'transform',
         }}
       >
-        <style>{`div::-webkit-scrollbar{display:none}`}</style>
-
-        {/* Container scaled theo zoom */}
-        <div style={{
-          position: 'relative',
-          width: CANVAS_SIZE * zoom,
-          height: CANVAS_SIZE * zoom,
-        }}>
-          <div style={{
-            transform: `scale(${zoom})`,
-            transformOrigin: '0 0',
-            position: 'absolute', top: 0, left: 0,
-          }}>
-            <WhiteboardCanvas canvasRef={canvasRef} viewportRef={viewportRef} zoomRef={zoomRef} />
-            <CursorOverlay canvasRef={canvasRef} />
-          </div>
-        </div>
+        <WhiteboardCanvas canvasRef={canvasRef} containerRef={containerRef} camRef={cam} />
+        <CursorOverlay canvasRef={canvasRef} />
       </div>
 
       {/* Toggle UI */}
@@ -220,14 +275,13 @@ export default function WhiteboardPage() {
           background: 'rgba(255,255,255,0.95)',
           border: '1px solid rgba(0,0,0,0.1)',
           cursor: 'pointer', fontSize: 16,
-          boxShadow: '0 2px 8px rgba(0,0,0,0.1)',
           display: 'flex', alignItems: 'center', justifyContent: 'center',
+          boxShadow: '0 2px 8px rgba(0,0,0,0.1)',
         }}
       >{uiVisible ? '👁' : '✏️'}</button>
 
       {uiVisible && (
         <>
-          {/* Header */}
           <div style={{
             position: 'fixed', top: 12, left: '50%', transform: 'translateX(-50%)',
             display: 'flex', alignItems: 'center', gap: 8,
@@ -239,7 +293,7 @@ export default function WhiteboardPage() {
           }}>
             <span style={{ fontSize: 16 }}>🎨</span>
             <span style={{ fontWeight: 600, fontSize: 13 }}>{room?.name || roomId}</span>
-            <button onClick={handleCopyLink} style={{
+            <button onClick={() => { navigator.clipboard.writeText(window.location.href); alert('Đã copy!') }} style={{
               fontSize: 11, padding: '3px 8px', borderRadius: 5,
               border: '1px solid rgba(0,0,0,0.12)', background: 'transparent',
               cursor: 'pointer', color: '#378ADD',
@@ -248,20 +302,31 @@ export default function WhiteboardPage() {
 
           {/* Zoom controls */}
           <div style={{
-            position: 'fixed', bottom: 90, left: 16, zIndex: 200,
-            display: 'flex', flexDirection: 'column', gap: 4,
+            position: 'fixed', bottom: 90, left: 12, zIndex: 200,
+            display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4,
           }}>
-            <ZoomBtn onClick={handleZoomIn}>+</ZoomBtn>
-            <div style={{
-              background: 'rgba(255,255,255,0.95)',
-              border: '1px solid rgba(0,0,0,0.1)',
-              borderRadius: 6, padding: '4px 6px',
-              fontSize: 11, fontWeight: 600, textAlign: 'center',
-              cursor: 'pointer', userSelect: 'none',
-            }} onClick={handleZoomReset}>
-              {Math.round(zoom * 100)}%
-            </div>
-            <ZoomBtn onClick={handleZoomOut}>−</ZoomBtn>
+            {[
+              { label: '+', action: () => doZoom(1.3) },
+              { label: `${Math.round(zoom * 100)}%`, action: () => { cam.current.zoom = 1; applyTransform() }, style: { fontSize: 10, width: 38 } },
+              { label: '−', action: () => doZoom(1 / 1.3) },
+            ].map((b, i) => (
+              <button key={i} onClick={b.action} style={{
+                width: 34, height: 28, borderRadius: 6, cursor: 'pointer',
+                background: 'rgba(255,255,255,0.95)',
+                border: '1px solid rgba(0,0,0,0.12)',
+                fontSize: b.style?.fontSize || 16, fontWeight: 600,
+                ...(b.style || {}),
+              }}>{b.label}</button>
+            ))}
+          </div>
+
+          {/* Hint */}
+          <div style={{
+            position: 'fixed', bottom: 14, left: '50%', transform: 'translateX(-50%)',
+            fontSize: 10, color: 'rgba(0,0,0,0.35)', zIndex: 200,
+            pointerEvents: 'none', whiteSpace: 'nowrap',
+          }}>
+            PC: Ctrl+scroll zoom · Space+drag pan · Mobile: 2 ngón zoom/pan
           </div>
 
           <UserList />
@@ -269,72 +334,50 @@ export default function WhiteboardPage() {
         </>
       )}
 
-      <MiniMap viewportRef={viewportRef} canvasSize={CANVAS_SIZE} zoom={zoom} />
+      <MiniMap camRef={cam} canvasSize={CANVAS_SIZE} containerRef={containerRef} zoom={zoom} />
     </div>
   )
 }
 
-function ZoomBtn({ onClick, children }) {
-  return (
-    <button onClick={onClick} style={{
-      width: 32, height: 32, borderRadius: 6,
-      background: 'rgba(255,255,255,0.95)',
-      border: '1px solid rgba(0,0,0,0.1)',
-      fontSize: 18, fontWeight: 500, cursor: 'pointer',
-      boxShadow: '0 1px 4px rgba(0,0,0,0.08)',
-      display: 'flex', alignItems: 'center', justifyContent: 'center',
-    }}>{children}</button>
-  )
-}
-
-function MiniMap({ viewportRef, canvasSize, zoom }) {
-  const dotRef = useRef(null)
-  const MAP = 60
+function MiniMap({ camRef, canvasSize, containerRef, zoom }) {
+  const vpRef = useRef(null)
+  const MAP = 64
 
   useEffect(() => {
-    const vp = viewportRef.current
-    if (!vp) return
+    let raf
     const update = () => {
-      const dot = dotRef.current
-      if (!dot) return
-      const totalW = canvasSize * zoom
-      const totalH = canvasSize * zoom
-      const vw = (vp.clientWidth / totalW) * MAP
-      const vh = (vp.clientHeight / totalH) * MAP
-      const px = (vp.scrollLeft / totalW) * MAP
-      const py = (vp.scrollTop / totalH) * MAP
-      dot.style.left = px + 'px'
-      dot.style.top = py + 'px'
-      dot.style.width = Math.min(vw, MAP) + 'px'
-      dot.style.height = Math.min(vh, MAP) + 'px'
+      const vp = vpRef.current
+      const el = containerRef.current
+      if (!vp || !el) { raf = requestAnimationFrame(update); return }
+      const { x, y, zoom: z } = camRef.current
+      const vw = (el.clientWidth / (canvasSize * z)) * MAP
+      const vh = (el.clientHeight / (canvasSize * z)) * MAP
+      const px = (-x / (canvasSize * z)) * MAP
+      const py = (-y / (canvasSize * z)) * MAP
+      vp.style.left = Math.max(0, px) + 'px'
+      vp.style.top = Math.max(0, py) + 'px'
+      vp.style.width = Math.min(vw, MAP) + 'px'
+      vp.style.height = Math.min(vh, MAP) + 'px'
+      raf = requestAnimationFrame(update)
     }
-    vp.addEventListener('scroll', update, { passive: true })
-    update()
-    return () => vp.removeEventListener('scroll', update)
-  }, [viewportRef, canvasSize, zoom])
-
-  const onClick = (e) => {
-    const vp = viewportRef.current
-    const rect = e.currentTarget.getBoundingClientRect()
-    const px = (e.clientX - rect.left) / MAP
-    const py = (e.clientY - rect.top) / MAP
-    vp.scrollLeft = px * canvasSize * zoom - vp.clientWidth / 2
-    vp.scrollTop = py * canvasSize * zoom - vp.clientHeight / 2
-  }
+    raf = requestAnimationFrame(update)
+    return () => cancelAnimationFrame(raf)
+  }, [camRef, canvasSize, containerRef, zoom])
 
   return (
-    <div onClick={onClick} style={{
+    <div style={{
       position: 'fixed', bottom: 90, right: 12,
       width: MAP, height: MAP,
-      background: 'rgba(255,255,255,0.85)',
-      border: '1px solid rgba(0,0,0,0.12)',
-      borderRadius: 6, zIndex: 100, overflow: 'hidden', cursor: 'pointer',
+      background: 'rgba(255,255,255,0.8)',
+      border: '1px solid rgba(0,0,0,0.15)',
+      borderRadius: 6, zIndex: 100, overflow: 'hidden',
     }}>
-      <div ref={dotRef} style={{
+      <div ref={vpRef} style={{
         position: 'absolute',
-        background: 'rgba(55,138,221,0.3)',
-        border: '1px solid rgba(55,138,221,0.7)',
+        background: 'rgba(55,138,221,0.25)',
+        border: '1.5px solid rgba(55,138,221,0.8)',
         borderRadius: 2, minWidth: 4, minHeight: 4,
+        transition: 'all 0.05s',
       }} />
     </div>
   )
