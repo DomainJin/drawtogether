@@ -7,13 +7,27 @@ const MIN_INTERVAL = 4000  // 4s giữa các call (15 req/phút = 1 req/4s)
 
 const MODELS = ['gemini-2.0-flash-lite', 'gemini-2.0-flash']
 
+// Hỗ trợ nhiều key luân phiên: GEMINI_API_KEY, GEMINI_API_KEY_2, GEMINI_API_KEY_3
+let keyIndex = 0
+function getNextKey(env) {
+  const keys = [
+    env.GEMINI_API_KEY,
+    env.GEMINI_API_KEY_2,
+    env.GEMINI_API_KEY_3,
+  ].filter(Boolean)
+  if (!keys.length) return null
+  const key = keys[keyIndex % keys.length]
+  keyIndex++
+  return key
+}
+
 export async function setupAnimateRoute(app) {
 
   app.post('/api/animate/identify', async (req, reply) => {
     const { imageBase64 } = req.body || {}
     if (!imageBase64) return reply.code(400).send({ error: 'Missing imageBase64' })
 
-    const apiKey = process.env.GEMINI_API_KEY
+    const apiKey = getNextKey(process.env)
     if (!apiKey) return reply.code(500).send({ error: 'GEMINI_API_KEY not set' })
 
     // Cache check
@@ -33,19 +47,27 @@ export async function setupAnimateRoute(app) {
     }
     lastCallTime = Date.now()
 
+    // Thử từng model với từng key
     let result = null
-    for (const model of MODELS) {
-      try {
-        result = await callGemini(apiKey, model, imageBase64)
-        if (result.rateLimited) {
-          console.log(`[animate] ${model} still rate limited`)
-          // Đợi thêm rồi thử model tiếp
-          await sleep(3000)
-          continue
+    const allKeys = [
+      process.env.GEMINI_API_KEY,
+      process.env.GEMINI_API_KEY_2,
+      process.env.GEMINI_API_KEY_3,
+    ].filter(Boolean)
+
+    outer:
+    for (const key of allKeys) {
+      for (const model of MODELS) {
+        try {
+          result = await callGemini(key, model, imageBase64)
+          if (result.rateLimited) {
+            console.log(`[animate] key...${key.slice(-4)} ${model} rate limited`)
+            continue
+          }
+          break outer
+        } catch (err) {
+          console.error(`[animate] ${model}:`, err.message.slice(0, 80))
         }
-        break
-      } catch (err) {
-        console.error(`[animate] ${model}:`, err.message.slice(0, 80))
       }
     }
 
