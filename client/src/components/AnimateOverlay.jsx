@@ -220,32 +220,41 @@ export default function AnimateOverlay({ canvasRef, camRef, containerRef }) {
   const selStart = useRef(null)
   const [spriteCount, setSpriteCount] = useState(0)
 
-  // Lắng nghe sprite từ người khác
+  // Lắng nghe sprite từ socket (realtime) và canvas event (history khi join)
   useEffect(() => {
-    const socket = getSocket()
-    if (!socket) return
-
-    const handleSpriteAdd = (data) => {
+    const addSprite = (data) => {
       const { svgString, x, y, w, h, behavior, label, id } = data
-      // Tránh duplicate
-      if (spritesRef.current.find(s => s.id === id)) return
+      if (spritesRef.current.find(s => s.id === id)) return // tránh duplicate
       const sprite = new Sprite({ id, svgString, pixelImageData: null, x, y, w, h, behavior, label })
       spritesRef.current.push(sprite)
       setSpriteCount(c => c + 1)
     }
 
-    const handleSpriteClear = () => {
+    const clearSprites = () => {
       spritesRef.current = []
       setSpriteCount(0)
     }
 
-    socket.on('sprite:add', handleSpriteAdd)
-    socket.on('sprite:clear', handleSpriteClear)
-    return () => {
-      socket.off('sprite:add', handleSpriteAdd)
-      socket.off('sprite:clear', handleSpriteClear)
+    // Socket events (realtime từ server)
+    const socket = getSocket()
+    if (socket) {
+      socket.on('sprite:add', addSprite)
+      socket.on('sprite:clear', clearSprites)
     }
-  }, [])
+
+    // Canvas events (history load khi join phòng)
+    const canvas = canvasRef.current
+    const handleHistoryAdd = (e) => addSprite(e.detail)
+    canvas?.addEventListener('remote:sprite:add', handleHistoryAdd)
+
+    return () => {
+      if (socket) {
+        socket.off('sprite:add', addSprite)
+        socket.off('sprite:clear', clearSprites)
+      }
+      canvas?.removeEventListener('remote:sprite:add', handleHistoryAdd)
+    }
+  }, [canvasRef])
 
   // Animation loop
   useEffect(() => {
@@ -397,10 +406,7 @@ export default function AnimateOverlay({ canvasRef, camRef, containerRef }) {
         w: spriteW, h: spriteH,
         behavior, label,
       })
-      spritesRef.current.push(sprite)
-      setSpriteCount(c => c + 1)
-
-      // Broadcast sprite cho các user khác
+      // Chỉ emit lên server — server sẽ broadcast lại cho TẤT CẢ user kể cả mình
       const socket = getSocket()
       if (socket) {
         socket.emit('sprite:add', {
@@ -411,6 +417,7 @@ export default function AnimateOverlay({ canvasRef, camRef, containerRef }) {
           behavior, label,
         })
       }
+      // KHÔNG tự add local — đợi server broadcast lại
 
       // Xóa vùng khỏi canvas tĩnh
       const ctx = canvas.getContext('2d', { willReadFrequently: true })

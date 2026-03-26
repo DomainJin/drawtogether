@@ -69,7 +69,7 @@ io.use(async (socket, next) => {
   }
 })
 
-setupSocketHandlers(io)
+setupSocketHandlers(io, pubClient)
 
 // ── HTTP Routes ───────────────────────────────────────────────────────────────
 app.get('/health', async () => ({ status: 'ok', ts: Date.now() }))

@@ -12,7 +12,7 @@ import { nanoid } from 'nanoid'
 // Theo dõi presence: roomId -> Map<socketId, userInfo>
 const roomPresence = new Map()
 
-export function setupSocketHandlers(io) {
+export function setupSocketHandlers(io, redis) {
   io.setMaxListeners(0) // 0 = unlimited
   io.on('connection', (socket) => {
     socket.setMaxListeners(0) // 0 = unlimited
@@ -24,18 +24,38 @@ export function setupSocketHandlers(io) {
       socket.to(roomId).emit('viewport:scroll', { ...data, socketId: socket.id })
     })
 
-    // ── ANIMATE SPRITE — broadcast cho tất cả user trong phòng ───────────────
-    socket.on('sprite:add', (sprite) => {
+    // ── ANIMATE SPRITE — lưu Redis + broadcast tất cả user ────────────────────
+    socket.on('sprite:add', async (sprite) => {
       const roomId = socket.currentRoom
       if (!roomId) return
-      // Broadcast sprite đến tất cả người khác trong phòng
-      socket.to(roomId).emit('sprite:add', { ...sprite, fromSocketId: socket.id })
+
+      // Lưu vào Redis (danh sách sprites của room)
+      try {
+        const key = `sprites:${roomId}`
+        const spriteData = JSON.stringify({ ...sprite, fromSocketId: socket.id, ts: Date.now() })
+        await redis.rpush(key, spriteData)
+        await redis.expire(key, 60 * 60 * 24) // TTL 24h
+      } catch (e) {
+        console.error('[sprite:add] redis error:', e.message)
+      }
+
+      // Broadcast cho TẤT CẢ user trong phòng (kể cả người gửi)
+      io.to(roomId).emit('sprite:add', { ...sprite, fromSocketId: socket.id })
     })
 
-    socket.on('sprite:clear', () => {
+    socket.on('sprite:clear', async () => {
       const roomId = socket.currentRoom
       if (!roomId) return
-      socket.to(roomId).emit('sprite:clear', { fromSocketId: socket.id })
+
+      // Xóa khỏi Redis
+      try {
+        await redis.del(`sprites:${roomId}`)
+      } catch (e) {
+        console.error('[sprite:clear] redis error:', e.message)
+      }
+
+      // Broadcast cho tất cả
+      io.to(roomId).emit('sprite:clear')
     })
     const { userId, displayName, color } = socket.user
     console.log(`[WS] connected: ${displayName} (${socket.id})`)
@@ -62,11 +82,22 @@ export function setupSocketHandlers(io) {
         // Thông báo cho những người đang trong phòng
         socket.to(roomId).emit('user:joined', { userId, displayName, color, socketId: socket.id })
 
+        // Load sprites từ Redis
+        let sprites = []
+        try {
+          const spriteKey = `sprites:${roomId}`
+          const raw = await redis.lrange(spriteKey, 0, -1)
+          sprites = raw.map(s => JSON.parse(s))
+        } catch (e) {
+          console.error('[room:join] sprite load error:', e.message)
+        }
+
         // Gửi state hiện tại cho người vừa vào
         ack?.({
           ok: true,
           room,
           strokes,
+          sprites,
           users: [...(roomPresence.get(roomId)?.values() || [])],
         })
 

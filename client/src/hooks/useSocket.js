@@ -56,8 +56,17 @@ export function useSocket(roomId, canvasRef) {
         // Vẽ lại toàn bộ lịch sử lên canvas
         const canvas = canvasRef.current
         if (canvas && res.strokes.length > 0) {
-          const ctx = canvas.getContext('2d')
+          const ctx = canvas.getContext('2d', { willReadFrequently: true })
           res.strokes.forEach(s => renderStroke(ctx, s))
+        }
+
+        // Load sprites đã lưu — dispatch event để AnimateOverlay xử lý
+        if (res.sprites && res.sprites.length > 0) {
+          res.sprites.forEach(sprite => {
+            canvasRef.current?.dispatchEvent(
+              new CustomEvent('remote:sprite:add', { detail: sprite })
+            )
+          })
         }
       })
     })
