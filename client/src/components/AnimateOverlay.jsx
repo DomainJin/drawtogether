@@ -311,7 +311,7 @@ export default function AnimateOverlay({ canvasRef, camRef, containerRef }) {
       tmp.getContext('2d').putImageData(imageData, 0, 0)
       const base64 = tmp.toDataURL('image/png').split(',')[1]
 
-      setStatus('AI đang nhận diện và vẽ lại...')
+      setStatus('AI đang nhận diện... (có thể mất 10-30s)')
 
       const res = await fetch(`${SERVER_URL}/api/animate/identify`, {
         method: 'POST',
