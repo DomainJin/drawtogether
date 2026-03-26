@@ -6,6 +6,7 @@ import WhiteboardCanvas from '../components/WhiteboardCanvas.jsx'
 import Toolbar from '../components/Toolbar.jsx'
 import CursorOverlay from '../components/CursorOverlay.jsx'
 import UserList from '../components/UserList.jsx'
+import AnimateOverlay from '../components/AnimateOverlay.jsx'
 
 const CANVAS_SIZE = 4000
 const MIN_ZOOM = 0.05
@@ -331,6 +332,7 @@ export default function WhiteboardPage() {
 
           <UserList />
           <Toolbar onExport={handleExport} />
+          <AnimateOverlay canvasRef={canvasRef} camRef={cam} containerRef={containerRef} />
         </>
       )}
 
