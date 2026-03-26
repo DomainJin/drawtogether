@@ -1,127 +1,176 @@
 import { useEffect, useRef, useState, useCallback } from 'react'
 
-// Physics constants
-const FRICTION = 0.98
-const BOUNCE = 0.6
-const GRAVITY = 0.15
-const WOBBLE_SPEED = 0.08
+const SERVER_URL = import.meta.env.VITE_SERVER_URL || 'http://localhost:3001'
 
-// Mỗi sprite là một object vẽ đã được animate
+// ── Behavior map ──────────────────────────────────────────────────────────────
+function getBehavior(label) {
+  const l = (label || '').toLowerCase()
+  if (/fish|whale|shark|dolphin|cá|seal|octopus/.test(l)) return 'swim'
+  if (/car|truck|bus|vehicle|xe|train|motorcycle|bike|tank/.test(l)) return 'drive'
+  if (/bird|butterfly|bee|fly|plane|airplane|dragon|kite|ufo|rocket/.test(l)) return 'fly'
+  if (/ball|balloon|bubble|bóng/.test(l)) return 'bounce'
+  if (/leaf|snow|rain|star|petal/.test(l)) return 'fall'
+  return 'roam' // default: di chuyển tự do
+}
+
+// ── Sprite class — SVG-based, physics tự do ───────────────────────────────────
 class Sprite {
-  constructor({ id, imageData, x, y, w, h, behavior }) {
+  constructor({ id, svgString, pixelImageData, x, y, w, h, behavior, label }) {
     this.id = id
-    this.imageData = imageData  // ImageData từ canvas
-    this.x = x; this.y = y
+    this.label = label
+    this.behavior = behavior
     this.w = w; this.h = h
-    this.behavior = behavior    // 'swim' | 'drive' | 'bounce' | 'wobble' | 'float' | 'fall'
+    this.x = x; this.y = y
 
-    // Physics state
-    this.vx = (Math.random() - 0.5) * 2
-    this.vy = behavior === 'fall' ? 0 : (Math.random() - 0.5) * 2
-    this.angle = 0
-    this.wobblePhase = Math.random() * Math.PI * 2
-    this.flipX = this.vx < 0
-    this.age = 0
+    // Vận tốc ban đầu random — đủ mạnh để di chuyển rõ
+    const speed = behavior === 'drive' || behavior === 'swim' ? 2.5
+                : behavior === 'fly' ? 2
+                : behavior === 'bounce' ? 3.5 : 2
+    const angle = Math.random() * Math.PI * 2
+    this.vx = Math.cos(angle) * speed
+    this.vy = Math.sin(angle) * speed
 
-    // Vẽ imageData ra offscreen canvas để có thể drawImage
-    this.offscreen = document.createElement('canvas')
-    this.offscreen.width = w
-    this.offscreen.height = h
-    this.offscreen.getContext('2d').putImageData(imageData, 0, 0)
+    this.angle = 0          // rotation hiển thị
+    this.wobble = Math.random() * Math.PI * 2
+    this.wobbleAmp = 0
+
+    // Tạo Image từ SVG string hoặc fallback pixel
+    this.img = new Image()
+    this.ready = false
+
+    if (svgString) {
+      // SVG → blob URL
+      const blob = new Blob([svgString], { type: 'image/svg+xml' })
+      const url = URL.createObjectURL(blob)
+      this.img.onload = () => { this.ready = true; URL.revokeObjectURL(url) }
+      this.img.src = url
+    } else if (pixelImageData) {
+      // Fallback: pixel ImageData
+      const tmp = document.createElement('canvas')
+      tmp.width = w; tmp.height = h
+      tmp.getContext('2d').putImageData(pixelImageData, 0, 0)
+      this.img.onload = () => { this.ready = true }
+      this.img.src = tmp.toDataURL()
+    }
   }
 
-  update(canvasW, canvasH) {
-    this.age++
-    this.wobblePhase += WOBBLE_SPEED
+  update(W, H) {
+    this.wobble += 0.06
 
     switch (this.behavior) {
-      case 'swim':
+
+      case 'swim': {
+        this.wobbleAmp = 0.12
+        this.x += this.vx
+        this.y += this.vy * 0.4
+        // Thỉnh thoảng đổi hướng y
+        if (Math.random() < 0.008) this.vy = (Math.random() - 0.5) * 2
+        this._bounceWalls(W, H)
+        this.angle = Math.sin(this.wobble) * this.wobbleAmp
+        break
+      }
+
       case 'drive': {
-        // Di chuyển ngang, lắc lư nhẹ
+        this.wobbleAmp = 0.03
+        // Xe chỉ di chuyển ngang, lăn bánh nhẹ
         this.x += this.vx
-        this.y += this.vy * 0.3
-        this.angle = Math.sin(this.wobblePhase) * (this.behavior === 'swim' ? 0.12 : 0.04)
-        // Bounce biên
-        if (this.x < 0) { this.x = 0; this.vx *= -1; this.flipX = this.vx < 0 }
-        if (this.x + this.w > canvasW) { this.x = canvasW - this.w; this.vx *= -1; this.flipX = this.vx < 0 }
-        if (this.y < 0) { this.y = 0; this.vy *= -1 }
-        if (this.y + this.h > canvasH) { this.y = canvasH - this.h; this.vy *= -1 }
+        // Thỉnh thoảng nhảy lên nhỏ
+        if (Math.random() < 0.005) this.vy = -2
+        this.vy += 0.1 // gravity nhẹ
+        this.y += this.vy
+        if (this.y + this.h > H) { this.y = H - this.h; this.vy = 0 }
+        if (this.y < 0) { this.y = 0; this.vy = Math.abs(this.vy) * 0.5 }
+        if (this.x < 0) { this.x = 0; this.vx = Math.abs(this.vx); }
+        if (this.x + this.w > W) { this.x = W - this.w; this.vx = -Math.abs(this.vx) }
+        this.angle = Math.sin(this.wobble * 0.5) * this.wobbleAmp
         break
       }
+
+      case 'fly': {
+        this.wobbleAmp = 0.15
+        this.x += this.vx
+        this.y += this.vy
+        // Random turbulence
+        this.vx += (Math.random() - 0.5) * 0.15
+        this.vy += (Math.random() - 0.5) * 0.15
+        // Clamp speed
+        const spd = Math.sqrt(this.vx*this.vx + this.vy*this.vy)
+        if (spd > 3.5) { this.vx = this.vx/spd*3.5; this.vy = this.vy/spd*3.5 }
+        if (spd < 1)   { this.vx *= 1.5; this.vy *= 1.5 }
+        this._bounceWalls(W, H)
+        this.angle = Math.sin(this.wobble) * this.wobbleAmp
+        break
+      }
+
       case 'bounce': {
-        this.vy += GRAVITY
-        this.vx *= FRICTION
+        // Full gravity + bounce
+        this.vy += 0.25
         this.x += this.vx
         this.y += this.vy
-        this.angle = this.vx * 0.05
-        if (this.x < 0) { this.x = 0; this.vx = Math.abs(this.vx) * BOUNCE }
-        if (this.x + this.w > canvasW) { this.x = canvasW - this.w; this.vx = -Math.abs(this.vx) * BOUNCE }
-        if (this.y + this.h > canvasH) {
-          this.y = canvasH - this.h
-          this.vy = -Math.abs(this.vy) * BOUNCE
-          this.vx += (Math.random() - 0.5) * 1.5 // random kick
+        this.angle = this.vx * 0.04
+        if (this.x < 0) { this.x = 0; this.vx = Math.abs(this.vx) * 0.85 }
+        if (this.x + this.w > W) { this.x = W - this.w; this.vx = -Math.abs(this.vx) * 0.85 }
+        if (this.y + this.h > H) {
+          this.y = H - this.h
+          this.vy = -Math.abs(this.vy) * 0.75
+          this.vx += (Math.random() - 0.5) * 1.5
         }
-        if (this.y < 0) { this.y = 0; this.vy = Math.abs(this.vy) * BOUNCE }
+        if (this.y < 0) { this.y = 0; this.vy = Math.abs(this.vy) * 0.75 }
         break
       }
-      case 'wobble': {
-        // Rung lắc tại chỗ
-        this.x += Math.sin(this.wobblePhase * 1.3) * 0.8
-        this.y += Math.cos(this.wobblePhase * 0.9) * 0.5
-        this.angle = Math.sin(this.wobblePhase) * 0.2
-        break
-      }
-      case 'float': {
-        // Bay lơ lửng, trôi chậm
-        this.x += Math.sin(this.wobblePhase * 0.5) * 0.4 + this.vx * 0.3
-        this.y += Math.cos(this.wobblePhase * 0.3) * 0.3 + this.vy * 0.2
-        this.angle = Math.sin(this.wobblePhase * 0.7) * 0.1
-        // Wrap around edges
-        if (this.x < -this.w) this.x = canvasW
-        if (this.x > canvasW) this.x = -this.w
-        if (this.y < -this.h) this.y = canvasH
-        if (this.y > canvasH) this.y = -this.h
-        break
-      }
+
       case 'fall': {
-        this.vy += GRAVITY * 0.5
+        this.vy += 0.08
+        this.x += Math.sin(this.wobble * 0.5) * 0.6 + this.vx * 0.2
         this.y += this.vy
-        this.x += Math.sin(this.wobblePhase * 0.5) * 0.5
-        this.angle += 0.02
-        if (this.y > canvasH + this.h) {
+        this.angle += 0.015
+        if (this.y > H + this.h) {
           this.y = -this.h
-          this.x = Math.random() * canvasW
-          this.vy = 0
+          this.x = Math.random() * W
+          this.vy = 0.5 + Math.random() * 1.5
         }
+        break
+      }
+
+      default: // 'roam' — di chuyển tự do random
+      {
+        this.x += this.vx
+        this.y += this.vy
+        // Dần đổi hướng nhẹ
+        this.vx += (Math.random() - 0.5) * 0.12
+        this.vy += (Math.random() - 0.5) * 0.12
+        const spd = Math.sqrt(this.vx*this.vx + this.vy*this.vy)
+        if (spd > 3) { this.vx = this.vx/spd*3; this.vy = this.vy/spd*3 }
+        if (spd < 0.8) { this.vx *= 1.3; this.vy *= 1.3 }
+        this._bounceWalls(W, H)
+        this.angle = Math.sin(this.wobble * 0.7) * 0.08
         break
       }
     }
   }
 
+  _bounceWalls(W, H) {
+    if (this.x < 0) { this.x = 0; this.vx = Math.abs(this.vx) }
+    if (this.x + this.w > W) { this.x = W - this.w; this.vx = -Math.abs(this.vx) }
+    if (this.y < 0) { this.y = 0; this.vy = Math.abs(this.vy) }
+    if (this.y + this.h > H) { this.y = H - this.h; this.vy = -Math.abs(this.vy) }
+  }
+
   draw(ctx) {
+    if (!this.ready) return
     ctx.save()
     const cx = this.x + this.w / 2
     const cy = this.y + this.h / 2
     ctx.translate(cx, cy)
     ctx.rotate(this.angle)
-    if (this.flipX) ctx.scale(-1, 1)
-    ctx.drawImage(this.offscreen, -this.w / 2, -this.h / 2, this.w, this.h)
+    // Lật theo hướng đi
+    if (this.vx < -0.1) ctx.scale(-1, 1)
+    ctx.drawImage(this.img, -this.w / 2, -this.h / 2, this.w, this.h)
     ctx.restore()
   }
 }
 
-// Map từ label AI → behavior
-function getBehavior(label) {
-  const l = label.toLowerCase()
-  if (/fish|whale|shark|dolphin|cá|c[áa]/.test(l)) return 'swim'
-  if (/car|truck|bus|vehicle|xe|train|boat|motorcycle/.test(l)) return 'drive'
-  if (/ball|balloon|bubble|bóng/.test(l)) return 'bounce'
-  if (/bird|butterfly|bee|fly|plane|airplane|dragon|diều/.test(l)) return 'float'
-  if (/leaf|snow|rain|star|lá/.test(l)) return 'fall'
-  if (/person|human|cat|dog|animal|người|mèo|chó/.test(l)) return 'wobble'
-  return 'bounce' // default
-}
-
+// ── Component ─────────────────────────────────────────────────────────────────
 export default function AnimateOverlay({ canvasRef, camRef, containerRef }) {
   const overlayRef = useRef(null)
   const spritesRef = useRef([])
@@ -131,12 +180,20 @@ export default function AnimateOverlay({ canvasRef, camRef, containerRef }) {
   const [loading, setLoading] = useState(false)
   const [status, setStatus] = useState('')
   const selStart = useRef(null)
+  const [spriteCount, setSpriteCount] = useState(0)
 
   // Animation loop
   useEffect(() => {
     const overlay = overlayRef.current
     if (!overlay) return
     const ctx = overlay.getContext('2d')
+
+    const resize = () => {
+      overlay.width = window.innerWidth
+      overlay.height = window.innerHeight
+    }
+    resize()
+    window.addEventListener('resize', resize)
 
     const loop = () => {
       ctx.clearRect(0, 0, overlay.width, overlay.height)
@@ -147,21 +204,13 @@ export default function AnimateOverlay({ canvasRef, camRef, containerRef }) {
       rafRef.current = requestAnimationFrame(loop)
     }
     rafRef.current = requestAnimationFrame(loop)
-
-    const resize = () => {
-      overlay.width = overlay.parentElement.offsetWidth
-      overlay.height = overlay.parentElement.offsetHeight
-    }
-    resize()
-    const ro = new ResizeObserver(resize)
-    ro.observe(overlay.parentElement)
     return () => {
       cancelAnimationFrame(rafRef.current)
-      ro.disconnect()
+      window.removeEventListener('resize', resize)
     }
   }, [])
 
-  // Chuyển toạ độ màn hình → canvas
+  // Screen → canvas coords
   const screenToCanvas = useCallback((clientX, clientY) => {
     const el = containerRef.current
     if (!el) return { x: 0, y: 0 }
@@ -173,21 +222,20 @@ export default function AnimateOverlay({ canvasRef, camRef, containerRef }) {
     }
   }, [containerRef, camRef])
 
-  // Pointer events cho selection box
   const onSelStart = useCallback((e) => {
     if (!selecting) return
-    e.stopPropagation()
-    const pos = e.touches ? screenToCanvas(e.touches[0].clientX, e.touches[0].clientY)
-                          : screenToCanvas(e.clientX, e.clientY)
+    e.stopPropagation(); e.preventDefault()
+    const cl = e.touches ? e.touches[0] : e
+    const pos = screenToCanvas(cl.clientX, cl.clientY)
     selStart.current = pos
     setSelBox({ x: pos.x, y: pos.y, w: 0, h: 0 })
   }, [selecting, screenToCanvas])
 
   const onSelMove = useCallback((e) => {
     if (!selecting || !selStart.current) return
-    e.stopPropagation()
-    const pos = e.touches ? screenToCanvas(e.touches[0].clientX, e.touches[0].clientY)
-                          : screenToCanvas(e.clientX, e.clientY)
+    e.stopPropagation(); e.preventDefault()
+    const cl = e.touches ? e.touches[0] : e
+    const pos = screenToCanvas(cl.clientX, cl.clientY)
     setSelBox({
       x: Math.min(pos.x, selStart.current.x),
       y: Math.min(pos.y, selStart.current.y),
@@ -198,74 +246,80 @@ export default function AnimateOverlay({ canvasRef, camRef, containerRef }) {
 
   const onSelEnd = useCallback(async (e) => {
     if (!selecting || !selBox || selBox.w < 20 || selBox.h < 20) {
-      setSelBox(null)
-      selStart.current = null
-      return
+      setSelBox(null); selStart.current = null; return
     }
     e.stopPropagation()
     setSelecting(false)
     await analyzeAndAnimate(selBox)
-    setSelBox(null)
-    selStart.current = null
+    setSelBox(null); selStart.current = null
   }, [selecting, selBox])
 
   const analyzeAndAnimate = async (box) => {
     const canvas = canvasRef.current
     if (!canvas) return
     setLoading(true)
-    setStatus('Đang cắt vùng vẽ...')
+    setStatus('Đang cắt vùng...')
 
     try {
-      // Cắt vùng được chọn từ canvas
-      const { x, y, w, h } = box
-      const px = Math.max(0, Math.round(x))
-      const py = Math.max(0, Math.round(y))
-      const pw = Math.min(Math.round(w), canvas.width - px)
-      const ph = Math.min(Math.round(h), canvas.height - py)
-
+      const px = Math.max(0, Math.round(box.x))
+      const py = Math.max(0, Math.round(box.y))
+      const pw = Math.min(Math.round(box.w), canvas.width - px)
+      const ph = Math.min(Math.round(box.h), canvas.height - py)
       if (pw < 10 || ph < 10) { setLoading(false); return }
 
+      // Lấy pixel data để gửi AI
       const imageData = canvas.getContext('2d').getImageData(px, py, pw, ph)
-
-      // Chuyển vùng cắt → base64 để gửi API
       const tmp = document.createElement('canvas')
       tmp.width = pw; tmp.height = ph
       tmp.getContext('2d').putImageData(imageData, 0, 0)
       const base64 = tmp.toDataURL('image/png').split(',')[1]
 
-      setStatus('AI đang nhận diện...')
+      setStatus('AI đang nhận diện và vẽ lại...')
 
-      // Gọi Claude API để nhận diện
-      const SERVER_URL = import.meta.env.VITE_SERVER_URL || 'http://localhost:3001'
       const res = await fetch(`${SERVER_URL}/api/animate/identify`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ imageBase64: base64 })
       })
       const data = await res.json()
+
       const label = data.label || 'object'
-      const behavior = getBehavior(label)
+      const behavior = data.behavior || getBehavior(label)
+      const svgString = data.svg || null
 
-      setStatus(`Nhận diện: "${label}" → ${behavior}`)
+      setStatus(`"${label}" → ${behavior} ✨`)
 
-      // Tạo sprite và thêm vào animation
+      // Kích thước sprite trên màn hình
+      const zoom = camRef.current.zoom
+      const dispW = pw * zoom
+      const dispH = ph * zoom
+
+      // Scale lên cho dễ thấy (min 80px)
+      const scale = Math.max(1, 80 / Math.min(dispW, dispH))
+      const spriteW = dispW * scale
+      const spriteH = dispH * scale
+
+      // Vị trí ban đầu: ở giữa màn hình
+      const startX = window.innerWidth / 2 - spriteW / 2
+      const startY = window.innerHeight / 2 - spriteH / 2
+
       const sprite = new Sprite({
         id: Date.now(),
-        imageData,
-        x: px, y: py,
-        w: pw, h: ph,
-        behavior,
+        svgString,
+        pixelImageData: svgString ? null : imageData,
+        x: startX, y: startY,
+        w: spriteW, h: spriteH,
+        behavior, label,
       })
       spritesRef.current.push(sprite)
+      setSpriteCount(c => c + 1)
 
-      // Xóa vùng đó khỏi canvas tĩnh (vật thể "bước ra")
+      // Xóa vùng khỏi canvas tĩnh
       const ctx = canvas.getContext('2d')
-      ctx.save()
       ctx.fillStyle = '#ffffff'
       ctx.fillRect(px, py, pw, ph)
-      ctx.restore()
 
-      setTimeout(() => setStatus(''), 2500)
+      setTimeout(() => setStatus(''), 3000)
     } catch (err) {
       setStatus('Lỗi: ' + err.message)
       console.error(err)
@@ -274,124 +328,103 @@ export default function AnimateOverlay({ canvasRef, camRef, containerRef }) {
     }
   }
 
-  // Chuyển tọa độ canvas → màn hình để vẽ selection box
-  const canvasToScreen = (cx, cy) => {
+  // Canvas coords → screen coords để vẽ selection box UI
+  const toScreen = (cx, cy) => {
     const el = containerRef.current
     if (!el) return { sx: 0, sy: 0 }
     const rect = el.getBoundingClientRect()
     const { x, y, zoom } = camRef.current
-    return {
-      sx: cx * zoom + x + rect.left,
-      sy: cy * zoom + y + rect.top,
-    }
+    return { sx: cx * zoom + x + rect.left, sy: cy * zoom + y + rect.top }
   }
 
-  const selScreenBox = selBox ? (() => {
-    const tl = canvasToScreen(selBox.x, selBox.y)
-    const br = canvasToScreen(selBox.x + selBox.w, selBox.y + selBox.h)
+  const selScreen = selBox ? (() => {
+    const tl = toScreen(selBox.x, selBox.y)
+    const br = toScreen(selBox.x + selBox.w, selBox.y + selBox.h)
     return { left: tl.sx, top: tl.sy, width: br.sx - tl.sx, height: br.sy - tl.sy }
   })() : null
 
   return (
     <>
-      {/* Overlay canvas cho sprites (fixed, không bị transform) */}
-      <canvas
-        ref={overlayRef}
-        style={{
-          position: 'fixed', inset: 0,
-          pointerEvents: 'none',
-          zIndex: 50,
-        }}
-      />
+      {/* Sprite animation canvas — fixed, toàn màn hình */}
+      <canvas ref={overlayRef} style={{
+        position: 'fixed', inset: 0, pointerEvents: 'none', zIndex: 50,
+      }} />
 
       {/* Animate button */}
       <button
         onClick={() => { setSelecting(s => !s); setSelBox(null) }}
-        title="Chọn vùng để animate"
         style={{
           position: 'fixed', bottom: 90, left: 58, zIndex: 300,
           height: 34, padding: '0 12px', borderRadius: 8,
           background: selecting ? '#1a1a1a' : 'rgba(255,255,255,0.95)',
           color: selecting ? '#fff' : '#1a1a1a',
-          border: `1.5px solid ${selecting ? '#1a1a1a' : 'rgba(0,0,0,0.12)'}`,
+          border: `1.5px solid ${selecting ? '#1a1a1a' : 'rgba(0,0,0,0.15)'}`,
           cursor: 'pointer', fontSize: 13, fontWeight: 600,
-          boxShadow: '0 2px 8px rgba(0,0,0,0.1)',
           display: 'flex', alignItems: 'center', gap: 6,
+          boxShadow: '0 2px 8px rgba(0,0,0,0.1)',
           transition: 'all 0.15s',
         }}
-      >
-        ✨ {selecting ? 'Đang chọn...' : 'Animate'}
-      </button>
+      >✨ {selecting ? 'Kéo chọn...' : 'Animate'}</button>
 
-      {/* Clear all sprites */}
-      {spritesRef.current.length > 0 && (
+      {spriteCount > 0 && (
         <button
-          onClick={() => { spritesRef.current = [] }}
-          title="Xóa tất cả animation"
+          onClick={() => { spritesRef.current = []; setSpriteCount(0) }}
           style={{
-            position: 'fixed', bottom: 90, left: 170, zIndex: 300,
+            position: 'fixed', bottom: 90, left: 174, zIndex: 300,
             height: 34, padding: '0 10px', borderRadius: 8,
             background: 'rgba(255,255,255,0.95)',
             border: '1px solid rgba(0,0,0,0.12)',
             cursor: 'pointer', fontSize: 12, color: '#E24B4A',
           }}
-        >🗑 Clear</button>
+        >🗑 {spriteCount}</button>
       )}
 
-      {/* Selection capture layer */}
+      {/* Selection overlay */}
       {selecting && (
         <div
-          style={{
-            position: 'fixed', inset: 0, zIndex: 200,
-            cursor: 'crosshair',
-          }}
-          onMouseDown={onSelStart}
-          onMouseMove={onSelMove}
-          onMouseUp={onSelEnd}
-          onTouchStart={onSelStart}
-          onTouchMove={onSelMove}
-          onTouchEnd={onSelEnd}
+          style={{ position: 'fixed', inset: 0, zIndex: 250, cursor: 'crosshair' }}
+          onMouseDown={onSelStart} onMouseMove={onSelMove} onMouseUp={onSelEnd}
+          onTouchStart={onSelStart} onTouchMove={onSelMove} onTouchEnd={onSelEnd}
         >
-          <div style={{
-            position: 'absolute', inset: 0,
-            background: 'rgba(0,0,0,0.08)',
-          }} />
-          {/* Hint */}
+          <div style={{ position: 'absolute', inset: 0, background: 'rgba(0,0,0,0.1)' }} />
           <div style={{
             position: 'absolute', top: '50%', left: '50%',
             transform: 'translate(-50%,-50%)',
-            background: 'rgba(0,0,0,0.7)', color: '#fff',
-            padding: '10px 20px', borderRadius: 10,
+            background: 'rgba(0,0,0,0.75)', color: '#fff',
+            padding: '10px 20px', borderRadius: 12,
             fontSize: 14, pointerEvents: 'none', whiteSpace: 'nowrap',
           }}>
-            Kéo để chọn vùng vẽ cần animate
+            ✏️ Kéo để bao quanh hình vẽ → AI vẽ lại + animate
           </div>
-
-          {/* Selection box */}
-          {selScreenBox && selScreenBox.width > 5 && (
+          {selScreen && selScreen.width > 5 && (
             <div style={{
               position: 'fixed',
-              left: selScreenBox.left, top: selScreenBox.top,
-              width: selScreenBox.width, height: selScreenBox.height,
+              left: selScreen.left, top: selScreen.top,
+              width: selScreen.width, height: selScreen.height,
               border: '2px dashed #378ADD',
-              background: 'rgba(55,138,221,0.08)',
-              borderRadius: 4,
-              pointerEvents: 'none',
+              background: 'rgba(55,138,221,0.1)',
+              borderRadius: 4, pointerEvents: 'none',
             }} />
           )}
         </div>
       )}
 
-      {/* Loading/status */}
+      {/* Status toast */}
       {(loading || status) && (
         <div style={{
           position: 'fixed', top: 60, left: '50%', transform: 'translateX(-50%)',
-          background: 'rgba(0,0,0,0.8)', color: '#fff',
-          padding: '8px 18px', borderRadius: 20,
-          fontSize: 13, zIndex: 400, display: 'flex', alignItems: 'center', gap: 8,
+          background: 'rgba(0,0,0,0.82)', color: '#fff',
+          padding: '8px 20px', borderRadius: 20,
+          fontSize: 13, zIndex: 400,
+          display: 'flex', alignItems: 'center', gap: 8,
+          boxShadow: '0 4px 20px rgba(0,0,0,0.3)',
         }}>
-          {loading && <span style={{ animation: 'spin 1s linear infinite', display: 'inline-block' }}>⏳</span>}
+          {loading && <span style={{
+            display: 'inline-block',
+            animation: 'rotate 1s linear infinite',
+          }}>⚙️</span>}
           {status}
+          <style>{`@keyframes rotate { to { transform: rotate(360deg) } }`}</style>
         </div>
       )}
     </>
