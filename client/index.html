@@ -1,14 +1,45 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="vi">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover"
+    />
     <title>Whiteboard – Vẽ cùng nhau</title>
     <style>
-      *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-      body { font-family: system-ui, -apple-system, sans-serif; background: #fafafa; }
-      button { font-family: inherit; }
-      input { font-family: inherit; }
+      *,
+      *::before,
+      *::after {
+        box-sizing: border-box;
+        margin: 0;
+        padding: 0;
+      }
+      html,
+      body {
+        width: 100%;
+        height: 100%;
+        overflow: hidden;
+      }
+      body {
+        font-family:
+          system-ui,
+          -apple-system,
+          sans-serif;
+        background: #fafafa;
+        /* iOS safe area */
+        padding-bottom: env(safe-area-inset-bottom);
+      }
+      #root {
+        width: 100%;
+        height: 100%;
+      }
+      button {
+        font-family: inherit;
+      }
+      input {
+        font-family: inherit;
+      }
     </style>
   </head>
   <body>
