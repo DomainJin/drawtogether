@@ -5,15 +5,17 @@ import { nanoid } from 'nanoid'
 
 const CURSOR_THROTTLE_MS = 32
 const CANVAS_SIZE = 4000
+const MIN_ZOOM = 0.1
+const MAX_ZOOM = 5
 
-export default function WhiteboardCanvas({ canvasRef, viewportRef }) {
+export default function WhiteboardCanvas({ canvasRef, viewportRef, zoomRef }) {
   const { tool, color, width, opacity } = useStore()
   const isDrawing = useRef(false)
   const currentPoints = useRef([])
   const currentStrokeId = useRef(null)
   const lastCursorEmit = useRef(0)
-  const activeTouches = useRef(0)
 
+  // Init canvas
   useEffect(() => {
     const canvas = canvasRef.current
     if (!canvas) return
@@ -24,6 +26,7 @@ export default function WhiteboardCanvas({ canvasRef, viewportRef }) {
     ctx.fillRect(0, 0, CANVAS_SIZE, CANVAS_SIZE)
   }, [canvasRef])
 
+  // Remote clear
   useEffect(() => {
     const canvas = canvasRef.current
     if (!canvas) return
@@ -36,15 +39,16 @@ export default function WhiteboardCanvas({ canvasRef, viewportRef }) {
     return () => canvas.removeEventListener('remote:clear', handleClear)
   }, [canvasRef])
 
-  // Lấy toạ độ canvas (tính scroll offset)
+  // Lấy toạ độ canvas thực (chia cho zoom)
   const getPos = useCallback((clientX, clientY) => {
     const vp = viewportRef.current
+    const zoom = zoomRef.current
     const rect = vp.getBoundingClientRect()
     return {
-      x: clientX - rect.left + vp.scrollLeft,
-      y: clientY - rect.top + vp.scrollTop,
+      x: (clientX - rect.left + vp.scrollLeft) / zoom,
+      y: (clientY - rect.top + vp.scrollTop) / zoom,
     }
-  }, [viewportRef])
+  }, [viewportRef, zoomRef])
 
   const drawSegment = useCallback((points) => {
     const canvas = canvasRef.current
@@ -57,7 +61,6 @@ export default function WhiteboardCanvas({ canvasRef, viewportRef }) {
     ctx.lineWidth = width
     ctx.lineCap = 'round'
     ctx.lineJoin = 'round'
-    if (tool === 'eraser') ctx.globalCompositeOperation = 'source-over'
     ctx.beginPath()
     if (points.length === 2) {
       ctx.moveTo(points[0].x, points[0].y)
@@ -72,7 +75,7 @@ export default function WhiteboardCanvas({ canvasRef, viewportRef }) {
     ctx.restore()
   }, [tool, color, width, opacity])
 
-  // ── Mouse events (PC) ─────────────────────────────────────────────────────
+  // ── Mouse (PC) ────────────────────────────────────────────────────────────
   const onMouseDown = useCallback((e) => {
     if (e.button !== 0) return
     isDrawing.current = true
@@ -99,7 +102,7 @@ export default function WhiteboardCanvas({ canvasRef, viewportRef }) {
     }
   }, [getPos, drawSegment, tool, color, width, opacity])
 
-  const onMouseUp = useCallback(() => {
+  const finishStroke = useCallback(() => {
     if (!isDrawing.current) return
     isDrawing.current = false
     const points = currentPoints.current
@@ -111,55 +114,97 @@ export default function WhiteboardCanvas({ canvasRef, viewportRef }) {
     currentPoints.current = []
   }, [tool, color, width, opacity])
 
-  // ── Touch events (Mobile) ─────────────────────────────────────────────────
-  // 1 ngón = vẽ, 2+ ngón = scroll (browser tự xử lý vì touchAction: 'pan-x pan-y')
+  // ── Touch (Mobile): 1 ngón vẽ, 2 ngón pinch-zoom + pan ───────────────────
+  const lastTouchDist = useRef(null)
+  const lastTouchMid = useRef(null)
+
+  const getTouchDist = (t1, t2) => {
+    const dx = t1.clientX - t2.clientX
+    const dy = t1.clientY - t2.clientY
+    return Math.sqrt(dx*dx + dy*dy)
+  }
+
   const onTouchStart = useCallback((e) => {
-    activeTouches.current = e.touches.length
-    if (e.touches.length !== 1) {
-      // 2+ ngón: dừng vẽ, để browser scroll
+    if (e.touches.length === 1) {
+      e.preventDefault()
+      isDrawing.current = true
+      currentPoints.current = [getPos(e.touches[0].clientX, e.touches[0].clientY)]
+      currentStrokeId.current = nanoid()
+      lastTouchDist.current = null
+    } else if (e.touches.length === 2) {
+      // Dừng vẽ nếu đang vẽ
       if (isDrawing.current) {
         isDrawing.current = false
         currentPoints.current = []
       }
-      return
+      lastTouchDist.current = getTouchDist(e.touches[0], e.touches[1])
+      lastTouchMid.current = {
+        x: (e.touches[0].clientX + e.touches[1].clientX) / 2,
+        y: (e.touches[0].clientY + e.touches[1].clientY) / 2,
+      }
     }
-    e.preventDefault() // chặn scroll khi 1 ngón để vẽ
-    const t = e.touches[0]
-    isDrawing.current = true
-    currentPoints.current = [getPos(t.clientX, t.clientY)]
-    currentStrokeId.current = nanoid()
   }, [getPos])
 
   const onTouchMove = useCallback((e) => {
-    if (e.touches.length !== 1 || !isDrawing.current) return
-    e.preventDefault()
-    const t = e.touches[0]
-    const pos = getPos(t.clientX, t.clientY)
-    currentPoints.current.push(pos)
-    drawSegment(currentPoints.current)
-    const socket = getSocket()
-    if (socket && currentPoints.current.length % 3 === 0) {
-      socket.emit('draw:preview', {
-        id: currentStrokeId.current, tool, color, width, opacity,
-        points: currentPoints.current.slice(-4),
-      })
+    if (e.touches.length === 1 && isDrawing.current) {
+      e.preventDefault()
+      const pos = getPos(e.touches[0].clientX, e.touches[0].clientY)
+      currentPoints.current.push(pos)
+      drawSegment(currentPoints.current)
+      const socket = getSocket()
+      if (socket && currentPoints.current.length % 3 === 0) {
+        socket.emit('draw:preview', {
+          id: currentStrokeId.current, tool, color, width, opacity,
+          points: currentPoints.current.slice(-4),
+        })
+      }
+    } else if (e.touches.length === 2) {
+      e.preventDefault()
+      const vp = viewportRef.current
+      if (!vp) return
+
+      const newDist = getTouchDist(e.touches[0], e.touches[1])
+      const newMid = {
+        x: (e.touches[0].clientX + e.touches[1].clientX) / 2,
+        y: (e.touches[0].clientY + e.touches[1].clientY) / 2,
+      }
+
+      if (lastTouchDist.current && lastTouchMid.current) {
+        const scale = newDist / lastTouchDist.current
+        const oldZoom = zoomRef.current
+
+        // Zoom về điểm giữa 2 ngón
+        const rect = vp.getBoundingClientRect()
+        const pivotX = newMid.x - rect.left
+        const pivotY = newMid.y - rect.top
+
+        const newZoom = Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, oldZoom * scale))
+        zoomRef.current = newZoom
+
+        // Dispatch để WhiteboardPage update scale
+        vp.dispatchEvent(new CustomEvent('zoom:change', { detail: { zoom: newZoom, pivotX, pivotY, oldZoom } }))
+
+        // Pan theo di chuyển điểm giữa
+        const dx = newMid.x - lastTouchMid.current.x
+        const dy = newMid.y - lastTouchMid.current.y
+        vp.scrollLeft -= dx
+        vp.scrollTop -= dy
+      }
+
+      lastTouchDist.current = newDist
+      lastTouchMid.current = newMid
     }
-  }, [getPos, drawSegment, tool, color, width, opacity])
+  }, [getPos, drawSegment, viewportRef, zoomRef, tool, color, width, opacity])
 
   const onTouchEnd = useCallback((e) => {
-    activeTouches.current = e.touches.length
-    if (!isDrawing.current) return
-    isDrawing.current = false
-    const points = currentPoints.current
-    if (points.length >= 2) {
-      getSocket()?.emit('draw:stroke', {
-        id: currentStrokeId.current, tool, color, width, opacity, points,
-      })
+    if (e.touches.length === 0) {
+      lastTouchDist.current = null
+      lastTouchMid.current = null
     }
-    currentPoints.current = []
-  }, [tool, color, width, opacity])
+    finishStroke()
+  }, [finishStroke])
 
-  // Gắn touch events với passive:false để preventDefault hoạt động
+  // Gắn touch events passive:false
   useEffect(() => {
     const canvas = canvasRef.current
     if (!canvas) return
@@ -173,7 +218,7 @@ export default function WhiteboardCanvas({ canvasRef, viewportRef }) {
     }
   }, [canvasRef, onTouchStart, onTouchMove, onTouchEnd])
 
-  // Undo Ctrl+Z
+  // Ctrl+Z undo
   useEffect(() => {
     const onKey = (e) => {
       if ((e.ctrlKey || e.metaKey) && e.key === 'z') {
@@ -190,16 +235,17 @@ export default function WhiteboardCanvas({ canvasRef, viewportRef }) {
       ref={canvasRef}
       style={{
         display: 'block',
+        // Kích thước hiển thị = canvas size * zoom (CSS scale)
         width: CANVAS_SIZE,
         height: CANVAS_SIZE,
         cursor: tool === 'eraser' ? 'cell' : 'crosshair',
-        // touchAction pan cho phép 2-ngón scroll, 1-ngón bị chặn bởi preventDefault
-        touchAction: 'pan-x pan-y',
+        touchAction: 'none',
+        transformOrigin: '0 0',
       }}
       onMouseDown={onMouseDown}
       onMouseMove={onMouseMove}
-      onMouseUp={onMouseUp}
-      onMouseLeave={onMouseUp}
+      onMouseUp={finishStroke}
+      onMouseLeave={finishStroke}
     />
   )
 }
