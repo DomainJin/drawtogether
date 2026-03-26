@@ -15,6 +15,13 @@ const roomPresence = new Map()
 export function setupSocketHandlers(io) {
   io.on('connection', (socket) => {
     socket.setMaxListeners(50)
+
+    // ── VIEWPORT SCROLL (top level — chỉ register 1 lần) ────────────────────
+    socket.on('viewport:scroll', (data) => {
+      const roomId = socket.currentRoom
+      if (!roomId) return
+      socket.to(roomId).emit('viewport:scroll', { ...data, socketId: socket.id })
+    })
     const { userId, displayName, color } = socket.user
     console.log(`[WS] connected: ${displayName} (${socket.id})`)
 
