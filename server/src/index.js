@@ -18,10 +18,7 @@ const REDIS_URL = process.env.REDIS_URL || null
 // ── Fastify ───────────────────────────────────────────────────────────────────
 const app = Fastify({ logger: { level: 'info' } })
 
-await app.register(cors, {
-  origin: true,
-  credentials: true,
-})
+await app.register(cors, { origin: true, credentials: true })
 await app.register(jwt, { secret: JWT_SECRET })
 
 // ── Database ──────────────────────────────────────────────────────────────────
@@ -33,31 +30,32 @@ const io = new Server(app.server, {
   transports: ['websocket', 'polling'],
 })
 
-// ── Redis (tuỳ chọn — nếu có REDIS_URL thì dùng adapter để scale) ─────────────
+// ── Redis — khai báo ngoài if để dùng được ở setupSocketHandlers ──────────────
+let redisClient = null
+
 if (REDIS_URL) {
   try {
-    const pubClient = new Redis(REDIS_URL, {
+    const pub = new Redis(REDIS_URL, {
       maxRetriesPerRequest: null,
       enableReadyCheck: false,
       lazyConnect: true,
     })
-    const subClient = pubClient.duplicate()
-
-    pubClient.on('error', (err) => console.warn('[Redis pub] error:', err.message))
-    subClient.on('error', (err) => console.warn('[Redis sub] error:', err.message))
-
-    await Promise.all([pubClient.connect(), subClient.connect()])
-    io.adapter(createAdapter(pubClient, subClient))
-    app.decorate('redis', pubClient)
+    const sub = pub.duplicate()
+    pub.on('error', (err) => console.warn('[Redis pub]', err.message))
+    sub.on('error', (err) => console.warn('[Redis sub]', err.message))
+    await Promise.all([pub.connect(), sub.connect()])
+    io.adapter(createAdapter(pub, sub))
+    app.decorate('redis', pub)
+    redisClient = pub
     console.log('✅ Redis connected')
   } catch (err) {
-    console.warn('⚠️  Redis unavailable, running without pub/sub adapter:', err.message)
+    console.warn('⚠️  Redis unavailable:', err.message)
   }
 } else {
-  console.log('ℹ️  No REDIS_URL set, skipping Redis adapter (single instance mode)')
+  console.log('ℹ️  No REDIS_URL set')
 }
 
-// Middleware xác thực token trước khi connect
+// ── Auth middleware ───────────────────────────────────────────────────────────
 io.use(async (socket, next) => {
   const token = socket.handshake.auth.token
   if (!token) return next(new Error('Authentication required'))
@@ -69,7 +67,8 @@ io.use(async (socket, next) => {
   }
 })
 
-setupSocketHandlers(io, pubClient)
+// ── Socket handlers ───────────────────────────────────────────────────────────
+setupSocketHandlers(io, redisClient)
 
 // ── HTTP Routes ───────────────────────────────────────────────────────────────
 app.get('/health', async () => ({ status: 'ok', ts: Date.now() }))
