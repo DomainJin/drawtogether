@@ -4,7 +4,7 @@ import cors from '@fastify/cors'
 import jwt from '@fastify/jwt'
 import { Server } from 'socket.io'
 import { createAdapter } from '@socket.io/redis-adapter'
-import { createClient } from 'ioredis'
+import Redis from 'ioredis'
 import { setupRoomRoutes } from './routes/rooms.js'
 import { setupSocketHandlers } from './socket/handlers.js'
 import { setupDatabase } from './db/index.js'
@@ -27,9 +27,8 @@ await app.register(jwt, { secret: JWT_SECRET })
 await setupDatabase()
 
 // ── Redis ─────────────────────────────────────────────────────────────────────
-const pubClient = createClient(REDIS_URL)
+const pubClient = new Redis(REDIS_URL)
 const subClient = pubClient.duplicate()
-await Promise.all([pubClient.connect(), subClient.connect()])
 app.decorate('redis', pubClient)
 
 // ── Socket.IO ─────────────────────────────────────────────────────────────────
