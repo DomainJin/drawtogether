@@ -30,13 +30,15 @@ export function setupSocketHandlers(io, redis) {
       if (!roomId) return
 
       // Lưu vào Redis (danh sách sprites của room)
-      try {
-        const key = `sprites:${roomId}`
-        const spriteData = JSON.stringify({ ...sprite, fromSocketId: socket.id, ts: Date.now() })
-        await redis.rpush(key, spriteData)
-        await redis.expire(key, 60 * 60 * 24) // TTL 24h
-      } catch (e) {
-        console.error('[sprite:add] redis error:', e.message)
+      if (redis) {
+        try {
+          const key = `sprites:${roomId}`
+          const spriteData = JSON.stringify({ ...sprite, fromSocketId: socket.id, ts: Date.now() })
+          await redis.rpush(key, spriteData)
+          await redis.expire(key, 60 * 60 * 24) // TTL 24h
+        } catch (e) {
+          console.error('[sprite:add] redis error:', e.message)
+        }
       }
 
       // Broadcast cho TẤT CẢ user trong phòng (kể cả người gửi)
@@ -48,10 +50,12 @@ export function setupSocketHandlers(io, redis) {
       if (!roomId) return
 
       // Xóa khỏi Redis
-      try {
-        await redis.del(`sprites:${roomId}`)
-      } catch (e) {
-        console.error('[sprite:clear] redis error:', e.message)
+      if (redis) {
+        try {
+          await redis.del(`sprites:${roomId}`)
+        } catch (e) {
+          console.error('[sprite:clear] redis error:', e.message)
+        }
       }
 
       // Broadcast cho tất cả
@@ -84,12 +88,14 @@ export function setupSocketHandlers(io, redis) {
 
         // Load sprites từ Redis
         let sprites = []
-        try {
-          const spriteKey = `sprites:${roomId}`
-          const raw = await redis.lrange(spriteKey, 0, -1)
-          sprites = raw.map(s => JSON.parse(s))
-        } catch (e) {
-          console.error('[room:join] sprite load error:', e.message)
+        if (redis) {
+          try {
+            const spriteKey = `sprites:${roomId}`
+            const raw = await redis.lrange(spriteKey, 0, -1)
+            sprites = raw.map(s => JSON.parse(s))
+          } catch (e) {
+            console.error('[room:join] sprite load error:', e.message)
+          }
         }
 
         // Gửi state hiện tại cho người vừa vào
