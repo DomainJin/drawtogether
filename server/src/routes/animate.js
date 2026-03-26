@@ -1,12 +1,11 @@
-// Cache kết quả 60s để tránh gọi API lặp lại
 const cache = new Map()
-const CACHE_TTL = 60_000
+const CACHE_TTL = 120_000  // 2 phút
 
-// Model list đúng tên theo Gemini API v1beta hiện tại
-const MODELS = [
-  'gemini-2.0-flash-lite',
-  'gemini-2.0-flash',
-]
+// Queue để tránh gọi API đồng thời
+let lastCallTime = 0
+const MIN_INTERVAL = 4000  // 4s giữa các call (15 req/phút = 1 req/4s)
+
+const MODELS = ['gemini-2.0-flash-lite', 'gemini-2.0-flash']
 
 export async function setupAnimateRoute(app) {
 
@@ -17,40 +16,47 @@ export async function setupAnimateRoute(app) {
     const apiKey = process.env.GEMINI_API_KEY
     if (!apiKey) return reply.code(500).send({ error: 'GEMINI_API_KEY not set' })
 
-    // Cache key từ 100 ký tự đầu của base64
-    const cacheKey = imageBase64.slice(0, 100)
+    // Cache check
+    const cacheKey = imageBase64.slice(0, 120)
     const cached = cache.get(cacheKey)
     if (cached && Date.now() - cached.ts < CACHE_TTL) {
-      console.log('[animate] cache hit')
+      console.log('[animate] cache hit →', cached.data.label)
       return reply.send(cached.data)
     }
 
-    let lastError = ''
+    // Rate limit local: đợi đủ khoảng cách
+    const now = Date.now()
+    const wait = Math.max(0, MIN_INTERVAL - (now - lastCallTime))
+    if (wait > 0) {
+      console.log(`[animate] waiting ${wait}ms before API call`)
+      await sleep(wait)
+    }
+    lastCallTime = Date.now()
+
+    let result = null
     for (const model of MODELS) {
       try {
-        const result = await callGemini(apiKey, model, imageBase64)
+        result = await callGemini(apiKey, model, imageBase64)
         if (result.rateLimited) {
-          console.log(`[animate] ${model} rate limited, trying next...`)
-          lastError = result.error
-          await sleep(500)
+          console.log(`[animate] ${model} still rate limited`)
+          // Đợi thêm rồi thử model tiếp
+          await sleep(3000)
           continue
         }
-        // Lưu cache
-        cache.set(cacheKey, { ts: Date.now(), data: result })
-        setTimeout(() => cache.delete(cacheKey), CACHE_TTL)
-        return reply.send(result)
+        break
       } catch (err) {
-        lastError = err.message
-        console.error(`[animate] ${model} error:`, err.message.slice(0, 120))
+        console.error(`[animate] ${model}:`, err.message.slice(0, 80))
       }
     }
 
-    // Tất cả fail — trả fallback có SVG mặc định thay vì null
-    console.log('[animate] all failed, using fallback. Last error:', lastError.slice(0,100))
-    return reply.send({
-      type: 'drawing', label: 'object', behavior: 'roam',
-      svg: defaultSVG(), fallback: true,
-    })
+    if (!result || result.rateLimited) {
+      console.log('[animate] rate limited, returning fallback with default SVG')
+      result = { type: 'drawing', label: 'object', behavior: 'roam', svg: defaultSVG(), rateLimited: true }
+    }
+
+    cache.set(cacheKey, { ts: Date.now(), data: result })
+    setTimeout(() => cache.delete(cacheKey), CACHE_TTL)
+    return reply.send(result)
   })
 }
 
@@ -64,28 +70,36 @@ async function callGemini(apiKey, model, imageBase64) {
       contents: [{
         parts: [
           { inline_data: { mime_type: 'image/png', data: imageBase64 } },
-          { text: `What is drawn or written in this image?
+          { text: `Identify what is drawn or written in this image.
 
-Reply with JSON only (no markdown):
-{"type":"drawing","label":"fish","behavior":"swim","svg":"SVG_HERE"}
+Reply ONLY with JSON, no markdown:
+{"type":"drawing","label":"fish","behavior":"swim","svg":"<svg viewBox=\\"0 0 120 80\\" xmlns=\\"http://www.w3.org/2000/svg\\">SHAPES_HERE</svg>"}
 
-type: "text" if handwritten words, "drawing" if sketch
-label: exact word(s) if text, or single English noun if drawing
-behavior: swim/drive/fly/bounce/fall/walk/float/spin/roam
-svg: clean colorful SVG viewBox="0 0 120 80", no background
+type: "text" if handwritten words/letters, "drawing" if sketch
+label: the word(s) if text, or single English noun if drawing  
+behavior: swim|drive|fly|bounce|fall|walk|float|spin|roam
+svg: colorful illustration, viewBox="0 0 120 80", no background rect
 
-Behavior guide: fish/whale=swim, car/truck=drive, bird/plane=fly, ball=bounce, star/leaf=fall, person/cat=walk, cloud=float, flower/sun=spin` }
+Quick behavior guide:
+fish/whale/shark/sea creature → swim
+car/truck/bus/train/vehicle → drive  
+bird/plane/butterfly/ufo → fly
+ball/balloon/bubble → bounce
+star/leaf/snow/petal → fall
+person/human/cat/dog/animal → walk
+cloud/ghost/jellyfish → float
+flower/sun/wheel → spin
+text label uses content to decide behavior` }
         ]
       }],
-      generationConfig: { temperature: 0.2, maxOutputTokens: 1000 }
+      generationConfig: { temperature: 0.1, maxOutputTokens: 800 }
     })
   })
 
   if (res.status === 429) return { rateLimited: true, error: `429 on ${model}` }
-
   if (!res.ok) {
     const body = await res.text()
-    throw new Error(`${res.status}: ${body.slice(0, 150)}`)
+    throw new Error(`${res.status}: ${body.slice(0, 100)}`)
   }
 
   const data = await res.json()
@@ -95,13 +109,13 @@ Behavior guide: fish/whale=swim, car/truck=drive, bird/plane=fly, ball=bounce, s
   let parsed
   try { parsed = JSON.parse(text) }
   catch {
-    console.error(`[animate] parse fail:`, text.slice(0, 150))
-    return { type: 'drawing', label: 'object', behavior: 'roam', svg: defaultSVG() }
+    console.error('[animate] parse fail:', text.slice(0, 100))
+    return { type:'drawing', label:'object', behavior:'roam', svg: defaultSVG() }
   }
 
   const valid = ['swim','drive','fly','bounce','fall','walk','float','spin','roam']
   if (!valid.includes(parsed.behavior)) parsed.behavior = getBehavior(parsed.label, parsed.type)
-  if (!parsed.svg || !parsed.svg.startsWith('<svg')) parsed.svg = defaultSVG()
+  if (!parsed.svg?.startsWith('<svg')) parsed.svg = defaultSVG()
 
   console.log(`[animate] ${model}: "${parsed.label}" → ${parsed.behavior}`)
   return parsed
@@ -110,15 +124,15 @@ Behavior guide: fish/whale=swim, car/truck=drive, bird/plane=fly, ball=bounce, s
 function getBehavior(label, type) {
   const l = (label || '').toLowerCase()
   if (type === 'text') {
-    if (/whale|fish|shark|swim|ocean|sea/.test(l)) return 'swim'
+    if (/fish|whale|shark|swim|ocean|sea|water/.test(l)) return 'swim'
     if (/fly|bird|sky|plane|air/.test(l)) return 'fly'
-    if (/car|drive|race|road/.test(l)) return 'drive'
+    if (/car|drive|road/.test(l)) return 'drive'
     if (/star|fall|rain|snow|leaf/.test(l)) return 'fall'
     return 'float'
   }
   if (/fish|whale|shark|dolphin|seal|octopus|tuna|crab/.test(l)) return 'swim'
   if (/car|truck|bus|train|bike|motorcycle|van|jeep/.test(l)) return 'drive'
-  if (/bird|butterfly|bee|plane|airplane|ufo|dragon|eagle|bat|kite/.test(l)) return 'fly'
+  if (/bird|butterfly|bee|plane|airplane|ufo|dragon|eagle|bat/.test(l)) return 'fly'
   if (/ball|balloon|bubble/.test(l)) return 'bounce'
   if (/star|leaf|snowflake|petal|feather/.test(l)) return 'fall'
   if (/person|human|man|woman|boy|girl|stick|cat|dog|rabbit|bear/.test(l)) return 'walk'
@@ -129,9 +143,9 @@ function getBehavior(label, type) {
 
 function defaultSVG() {
   return `<svg viewBox="0 0 120 80" xmlns="http://www.w3.org/2000/svg">
-    <circle cx="60" cy="40" r="25" fill="#7F77DD" opacity="0.8"/>
-    <circle cx="60" cy="40" r="15" fill="#AFA9EC" opacity="0.6"/>
-    <circle cx="60" cy="40" r="6" fill="white" opacity="0.9"/>
+    <circle cx="60" cy="40" r="28" fill="#7F77DD" opacity="0.85"/>
+    <circle cx="60" cy="40" r="18" fill="#AFA9EC" opacity="0.7"/>
+    <circle cx="60" cy="40" r="8" fill="white" opacity="0.9"/>
   </svg>`
 }
 

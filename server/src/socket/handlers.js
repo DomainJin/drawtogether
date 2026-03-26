@@ -13,8 +13,9 @@ import { nanoid } from 'nanoid'
 const roomPresence = new Map()
 
 export function setupSocketHandlers(io) {
+  io.setMaxListeners(0) // 0 = unlimited
   io.on('connection', (socket) => {
-    socket.setMaxListeners(50)
+    socket.setMaxListeners(0) // 0 = unlimited
 
     // ── VIEWPORT SCROLL (top level — chỉ register 1 lần) ────────────────────
     socket.on('viewport:scroll', (data) => {
