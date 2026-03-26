@@ -93,6 +93,13 @@ export function setupSocketHandlers(io) {
       const roomId = socket.currentRoom
       if (!roomId) return
       socket.to(roomId).emit('cursor:move', { ...data, userId, displayName, color, socketId: socket.id })
+
+    // ── VIEWPORT SCROLL ─────────────────────────────────────────────────────
+    socket.on('viewport:scroll', (data) => {
+      const roomId = socket.currentRoom
+      if (!roomId) return
+      socket.to(roomId).emit('viewport:scroll', { ...data, socketId: socket.id })
+    })
     })
 
     // ── UNDO ─────────────────────────────────────────────────────────────────

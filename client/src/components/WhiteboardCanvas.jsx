@@ -3,67 +3,97 @@ import { useStore } from '../store/index.js'
 import { getSocket, renderStroke } from '../hooks/useSocket.js'
 import { nanoid } from 'nanoid'
 
-const CURSOR_THROTTLE_MS = 32 // ~30fps cho cursor
+const CURSOR_THROTTLE_MS = 32
+const CANVAS_SIZE = 4000 // canvas logic lớn, scroll trong đó
 
-export default function WhiteboardCanvas({ canvasRef }) {
-  const { tool, color, width, opacity, user } = useStore()
+export default function WhiteboardCanvas({ canvasRef, viewportRef }) {
+  const { tool, color, width, opacity } = useStore()
   const isDrawing = useRef(false)
   const currentPoints = useRef([])
   const currentStrokeId = useRef(null)
   const lastCursorEmit = useRef(0)
-  const previewLayerRef = useRef({}) // { socketId: points[] }
-  const strokeHistoryRef = useRef([]) // local undo history
-  const containerRef = useRef(null)
+  const isPanning = useRef(false)
+  const panStart = useRef({ x: 0, y: 0, scrollLeft: 0, scrollTop: 0 })
 
-  // Resize canvas theo container
+  // Resize canvas một lần
   useEffect(() => {
     const canvas = canvasRef.current
     if (!canvas) return
-    const resize = () => {
-      const { width: w, height: h } = canvas.parentElement.getBoundingClientRect()
-      // Lưu nội dung trước khi resize
-      const img = canvas.toDataURL()
-      canvas.width = w
-      canvas.height = h
-      // Vẽ lại sau resize
-      const img2 = new Image()
-      img2.onload = () => canvas.getContext('2d').drawImage(img2, 0, 0)
-      img2.src = img
-    }
-    resize()
-    const ro = new ResizeObserver(resize)
-    ro.observe(canvas.parentElement)
-    return () => ro.disconnect()
+    canvas.width = CANVAS_SIZE
+    canvas.height = CANVAS_SIZE
   }, [canvasRef])
 
-  // Lắng nghe sự kiện từ socket
+  // Lắng nghe remote undo/clear
   useEffect(() => {
     const canvas = canvasRef.current
     if (!canvas) return
-
-    const handleRemoteUndo = () => {
-      // Đơn giản nhất: reload strokes từ server (socket handler sẽ emit lại)
-      // Hoặc rebuild từ strokeHistory nếu muốn offline-first
-      window.location.reload()
+    const handleClear = () => {
+      canvas.getContext('2d').clearRect(0, 0, CANVAS_SIZE, CANVAS_SIZE)
     }
-
-    canvas.addEventListener('remote:undo', handleRemoteUndo)
-    return () => canvas.removeEventListener('remote:undo', handleRemoteUndo)
+    canvas.addEventListener('remote:clear', handleClear)
+    return () => canvas.removeEventListener('remote:clear', handleClear)
   }, [canvasRef])
 
-  // ── Pointer helpers ───────────────────────────────────────────────────────
+  // Đồng bộ scroll từ remote
+  useEffect(() => {
+    const canvas = canvasRef.current
+    if (!canvas) return
+    const handleScroll = (e) => {
+      const vp = viewportRef.current
+      if (!vp) return
+      vp.scrollLeft = e.detail.x
+      vp.scrollTop = e.detail.y
+    }
+    canvas.addEventListener('remote:scroll', handleScroll)
+    return () => canvas.removeEventListener('remote:scroll', handleScroll)
+  }, [canvasRef, viewportRef])
+
+  // Lấy toạ độ canvas từ pointer/touch (tính offset scroll)
   const getPos = useCallback((e) => {
-    const canvas = canvasRef.current
-    const rect = canvas.getBoundingClientRect()
+    const vp = viewportRef.current
     const clientX = e.touches ? e.touches[0].clientX : e.clientX
     const clientY = e.touches ? e.touches[0].clientY : e.clientY
+    const rect = vp.getBoundingClientRect()
     return {
-      x: (clientX - rect.left) * (canvas.width / rect.width),
-      y: (clientY - rect.top) * (canvas.height / rect.height),
+      x: clientX - rect.left + vp.scrollLeft,
+      y: clientY - rect.top + vp.scrollTop,
     }
-  }, [canvasRef])
+  }, [viewportRef])
 
+  // ── Vẽ local (realtime, không chờ server) ────────────────────────────────
+  const drawLocal = useCallback((points) => {
+    const canvas = canvasRef.current
+    if (!canvas || points.length < 2) return
+    const ctx = canvas.getContext('2d')
+    const i = points.length - 2
+    ctx.save()
+    ctx.globalAlpha = opacity
+    ctx.strokeStyle = tool === 'eraser' ? 'rgba(250,250,250,1)' : color
+    ctx.lineWidth = width
+    ctx.lineCap = 'round'
+    ctx.lineJoin = 'round'
+    if (tool === 'eraser') ctx.globalCompositeOperation = 'destination-out'
+    ctx.beginPath()
+    if (points.length === 2) {
+      ctx.moveTo(points[0].x, points[0].y)
+      ctx.lineTo(points[1].x, points[1].y)
+    } else {
+      const mx = (points[i].x + points[i+1].x) / 2
+      const my = (points[i].y + points[i+1].y) / 2
+      ctx.moveTo((points[i-1].x + points[i].x)/2, (points[i-1].y + points[i].y)/2)
+      ctx.quadraticCurveTo(points[i].x, points[i].y, mx, my)
+    }
+    ctx.stroke()
+    ctx.restore()
+  }, [tool, color, width, opacity])
+
+  // ── Pointer events ────────────────────────────────────────────────────────
   const onPointerDown = useCallback((e) => {
+    // Chỉ vẽ bằng 1 ngón, nếu 2 ngón thì pan
+    if (e.touches && e.touches.length === 2) {
+      isPanning.current = true
+      return
+    }
     e.preventDefault()
     isDrawing.current = true
     currentPoints.current = [getPos(e)]
@@ -71,59 +101,39 @@ export default function WhiteboardCanvas({ canvasRef }) {
   }, [getPos])
 
   const onPointerMove = useCallback((e) => {
-    e.preventDefault()
+    // Pan bằng 2 ngón tay
+    if (e.touches && e.touches.length === 2) {
+      return // pinch-to-zoom hoặc 2-finger pan — bỏ qua vẽ
+    }
+
     const pos = getPos(e)
     const socket = getSocket()
+    const now = Date.now()
 
     // Emit cursor (throttled)
-    const now = Date.now()
     if (socket && now - lastCursorEmit.current > CURSOR_THROTTLE_MS) {
       socket.emit('cursor:move', pos)
       lastCursorEmit.current = now
     }
 
     if (!isDrawing.current) return
+    e.preventDefault()
 
     currentPoints.current.push(pos)
-    const points = currentPoints.current
+    drawLocal(currentPoints.current)
 
-    // Vẽ local ngay (không chờ server)
-    const canvas = canvasRef.current
-    const ctx = canvas.getContext('2d')
-    if (points.length >= 2) {
-      ctx.save()
-      ctx.globalAlpha = opacity
-      ctx.strokeStyle = tool === 'eraser' ? '#ffffff' : color
-      ctx.lineWidth = width
-      ctx.lineCap = 'round'
-      ctx.lineJoin = 'round'
-      if (tool === 'eraser') ctx.globalCompositeOperation = 'destination-out'
-      ctx.beginPath()
-      const i = points.length - 2
-      if (points.length === 2) {
-        ctx.moveTo(points[0].x, points[0].y)
-        ctx.lineTo(points[1].x, points[1].y)
-      } else {
-        const mx = (points[i].x + points[i + 1].x) / 2
-        const my = (points[i].y + points[i + 1].y) / 2
-        ctx.moveTo((points[i - 1].x + points[i].x) / 2, (points[i - 1].y + points[i].y) / 2)
-        ctx.quadraticCurveTo(points[i].x, points[i].y, mx, my)
-      }
-      ctx.stroke()
-      ctx.restore()
-    }
-
-    // Gửi preview cho người khác (mỗi 3 điểm để giảm traffic)
-    if (socket && points.length % 3 === 0) {
+    // Gửi preview mỗi 3 điểm
+    if (socket && currentPoints.current.length % 3 === 0) {
       socket.emit('draw:preview', {
         id: currentStrokeId.current,
         tool, color, width, opacity,
-        points: points.slice(-4), // chỉ gửi vài điểm gần nhất
+        points: currentPoints.current.slice(-4),
       })
     }
-  }, [getPos, tool, color, width, opacity])
+  }, [getPos, drawLocal, tool, color, width, opacity])
 
-  const onPointerUp = useCallback((e) => {
+  const onPointerUp = useCallback(() => {
+    isPanning.current = false
     if (!isDrawing.current) return
     isDrawing.current = false
 
@@ -134,42 +144,42 @@ export default function WhiteboardCanvas({ canvasRef }) {
       id: currentStrokeId.current,
       tool, color, width, opacity, points,
     }
-
-    // Lưu local history để undo
-    strokeHistoryRef.current.push(stroke)
-
-    // Gửi stroke hoàn chỉnh lên server
     getSocket()?.emit('draw:stroke', stroke)
-
     currentPoints.current = []
   }, [tool, color, width, opacity])
 
-  // Undo local
+  // Undo Ctrl+Z
   useEffect(() => {
-    const handleKeyDown = (e) => {
+    const onKey = (e) => {
       if ((e.ctrlKey || e.metaKey) && e.key === 'z') {
         e.preventDefault()
         getSocket()?.emit('draw:undo')
       }
     }
-    window.addEventListener('keydown', handleKeyDown)
-    return () => window.removeEventListener('keydown', handleKeyDown)
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
   }, [])
 
   return (
     <canvas
       ref={canvasRef}
+      width={CANVAS_SIZE}
+      height={CANVAS_SIZE}
       style={{
         display: 'block',
-        width: '100%',
-        height: '100%',
+        width: CANVAS_SIZE,
+        height: CANVAS_SIZE,
         cursor: tool === 'eraser' ? 'cell' : 'crosshair',
         touchAction: 'none',
+        background: '#fafafa',
       }}
       onPointerDown={onPointerDown}
       onPointerMove={onPointerMove}
       onPointerUp={onPointerUp}
       onPointerLeave={onPointerUp}
+      onTouchStart={onPointerDown}
+      onTouchMove={onPointerMove}
+      onTouchEnd={onPointerUp}
     />
   )
 }

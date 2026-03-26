@@ -81,6 +81,11 @@ export function useSocket(roomId, canvasRef) {
       setCursor(socketId, { x, y, displayName, color })
     })
 
+    // Nhận scroll từ remote → dispatch event để WhiteboardPage xử lý
+    socketInstance.on('viewport:scroll', ({ x, y }) => {
+      canvasRef.current?.dispatchEvent(new CustomEvent('remote:scroll', { detail: { x, y } }))
+    })
+
     // Undo
     socketInstance.on('draw:undo', ({ strokeId }) => {
       // Cần rebuild canvas — gửi event để WhiteboardCanvas xử lý
