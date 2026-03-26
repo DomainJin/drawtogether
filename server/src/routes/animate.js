@@ -1,7 +1,5 @@
-// Route proxy cho Anthropic — nhận diện VÀ vẽ lại SVG
 export async function setupAnimateRoute(app) {
 
-  // Nhận diện + sinh SVG đẹp
   app.post('/api/animate/identify', async (req, reply) => {
     const { imageBase64 } = req.body || {}
     if (!imageBase64) return reply.code(400).send({ error: 'Missing imageBase64' })
@@ -19,7 +17,7 @@ export async function setupAnimateRoute(app) {
         },
         body: JSON.stringify({
           model: 'claude-haiku-4-5-20251001',
-          max_tokens: 1000,
+          max_tokens: 1500,
           messages: [{
             role: 'user',
             content: [
@@ -29,21 +27,28 @@ export async function setupAnimateRoute(app) {
               },
               {
                 type: 'text',
-                text: `Look at this hand-drawn sketch and:
-1. Identify what it is (one English word)
-2. Create a clean, beautiful SVG illustration of that object
+                text: `Analyze this hand-drawn image carefully.
 
-Rules for SVG:
+STEP 1 - Detect if it contains handwritten text/letters:
+- If YES (contains readable words/letters): set type="text", label=the exact word(s) read
+- If NO (it's a drawing/sketch): set type="drawing", label=one English noun describing what's drawn
+
+STEP 2 - Choose behavior based on what you identified:
+Behaviors: "swim" (fish/sea creatures), "drive" (vehicles/cars/trucks), "fly" (birds/planes/butterflies/balloons), "bounce" (balls/bubbles), "fall" (stars/leaves/snow/petals), "walk" (people/animals/stick figures), "spin" (stars/flowers/abstract), "float" (clouds/jellyfish/ghosts), "roam" (anything else)
+
+STEP 3 - Create SVG:
+- If type="text": create an SVG with the text rendered beautifully (decorative font style, colorful, maybe with relevant small icons)
+- If type="drawing": create a clean beautiful SVG illustration of the object
+
+SVG rules:
 - viewBox="0 0 120 80" exactly
-- Use simple shapes: path, circle, rect, ellipse, polygon
-- Make it look like a nice icon/illustration (not just outline)
-- Use appropriate colors (car=gray/blue, fish=orange/blue, bird=sky blue, etc)
-- Add small details to make it look good
-- NO text, NO background rect
-- Keep it simple but recognizable
+- Use vivid colors matching the object
+- For text SVGs: use <text> element with large font, decorative style, gradient fill or stroke effects
+- For drawing SVGs: use shapes to create recognizable illustration
+- NO background rect
 
-Respond in this exact JSON format (no markdown):
-{"label":"fish","behavior":"swim","svg":"<svg viewBox=\\"0 0 120 80\\" xmlns=\\"http://www.w3.org/2000/svg\\">...</svg>"}`
+Respond ONLY with this JSON (no markdown, no explanation):
+{"type":"drawing","label":"fish","behavior":"swim","svg":"<svg viewBox=\\"0 0 120 80\\" xmlns=\\"http://www.w3.org/2000/svg\\">...</svg>"}`
               }
             ]
           }]
@@ -51,18 +56,12 @@ Respond in this exact JSON format (no markdown):
       })
 
       const data = await res.json()
-      let text = data.content?.[0]?.text?.trim() || '{}'
-
-      // Strip markdown nếu có
-      text = text.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim()
+      let text = (data.content?.[0]?.text || '{}').trim()
+      text = text.replace(/^```json\s*/,'').replace(/^```\s*/,'').replace(/\s*```$/,'').trim()
 
       let parsed
-      try {
-        parsed = JSON.parse(text)
-      } catch {
-        // Fallback nếu parse lỗi
-        parsed = { label: 'object', behavior: 'bounce', svg: null }
-      }
+      try { parsed = JSON.parse(text) }
+      catch { parsed = { type: 'drawing', label: 'object', behavior: 'roam', svg: null } }
 
       return reply.send(parsed)
     } catch (err) {

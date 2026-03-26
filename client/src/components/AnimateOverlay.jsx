@@ -2,15 +2,18 @@ import { useEffect, useRef, useState, useCallback } from 'react'
 
 const SERVER_URL = import.meta.env.VITE_SERVER_URL || 'http://localhost:3001'
 
-// ── Behavior map ──────────────────────────────────────────────────────────────
+// ── Behavior map (fallback nếu server không trả về behavior) ─────────────────
 function getBehavior(label) {
   const l = (label || '').toLowerCase()
-  if (/fish|whale|shark|dolphin|cá|seal|octopus/.test(l)) return 'swim'
-  if (/car|truck|bus|vehicle|xe|train|motorcycle|bike|tank/.test(l)) return 'drive'
-  if (/bird|butterfly|bee|fly|plane|airplane|dragon|kite|ufo|rocket/.test(l)) return 'fly'
-  if (/ball|balloon|bubble|bóng/.test(l)) return 'bounce'
-  if (/leaf|snow|rain|star|petal/.test(l)) return 'fall'
-  return 'roam' // default: di chuyển tự do
+  if (/fish|whale|shark|dolphin|cá|seal|octopus|tuna|clown/.test(l)) return 'swim'
+  if (/car|truck|bus|vehicle|xe|train|motorcycle|bike|tank|van|jeep/.test(l)) return 'drive'
+  if (/bird|butterfly|bee|fly|plane|airplane|dragon|kite|ufo|rocket|eagle|dove|owl/.test(l)) return 'fly'
+  if (/ball|balloon|bubble|bóng|sphere/.test(l)) return 'bounce'
+  if (/leaf|snow|rain|star|petal|snowflake|confetti/.test(l)) return 'fall'
+  if (/person|human|man|woman|boy|girl|stick|người|cat|dog|rabbit|bear|fox/.test(l)) return 'walk'
+  if (/cloud|jelly|jellyfish|ghost|feather|smoke/.test(l)) return 'float'
+  if (/flower|sun|wheel|spiral|pinwheel/.test(l)) return 'spin'
+  return 'roam'
 }
 
 // ── Sprite class — SVG-based, physics tự do ───────────────────────────────────
@@ -132,11 +135,45 @@ class Sprite {
         break
       }
 
+      case 'walk': {
+        // Bước đi, nảy lên xuống nhịp nhàng
+        this.x += this.vx
+        this.y += H * 0.85 - this.h + Math.sin(this.wobble * 2) * 8 - this.y
+        this.y = H * 0.85 - this.h + Math.sin(this.wobble * 2) * 8
+        if (this.x < 0) { this.x = 0; this.vx = Math.abs(this.vx) }
+        if (this.x + this.w > W) { this.x = W - this.w; this.vx = -Math.abs(this.vx) }
+        this.angle = Math.sin(this.wobble) * 0.06
+        break
+      }
+
+      case 'float': {
+        // Trôi lơ lửng chậm rãi
+        this.x += Math.sin(this.wobble * 0.4) * 0.5 + this.vx * 0.15
+        this.y += Math.cos(this.wobble * 0.3) * 0.4 + this.vy * 0.1
+        this.angle = Math.sin(this.wobble * 0.5) * 0.08
+        // Wrap quanh màn hình
+        if (this.x < -this.w) this.x = W
+        if (this.x > W) this.x = -this.w
+        if (this.y < -this.h) this.y = H
+        if (this.y > H) this.y = -this.h
+        break
+      }
+
+      case 'spin': {
+        // Bay vòng tròn + xoay bản thân
+        const cx = W / 2, cy = H / 2
+        const orbitR = Math.min(W, H) * 0.3
+        this.spinAngle = (this.spinAngle || Math.atan2(this.y - cy, this.x - cx)) + 0.02
+        this.x = cx + Math.cos(this.spinAngle) * orbitR - this.w / 2
+        this.y = cy + Math.sin(this.spinAngle) * orbitR - this.h / 2
+        this.angle += 0.04
+        break
+      }
+
       default: // 'roam' — di chuyển tự do random
       {
         this.x += this.vx
         this.y += this.vy
-        // Dần đổi hướng nhẹ
         this.vx += (Math.random() - 0.5) * 0.12
         this.vy += (Math.random() - 0.5) * 0.12
         const spd = Math.sqrt(this.vx*this.vx + this.vy*this.vy)
