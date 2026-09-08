@@ -1,5 +1,5 @@
 import { create } from 'zustand'
-import { WATERFALL_CONFIG as CFG } from '../waterfall/config.js'
+import { WATERFALL_CONFIG as CFG, WATERFALL_UI as UI } from '../waterfall/config.js'
 import { createEmptyGrid, resizeGrid, setCell as setCellPure } from '../waterfall/grid.js'
 import { ValveSocket, SOCKET_STATUS } from '../waterfall/valveSocket.js'
 import { buildAnimationFrames, gridToOpenValveRows } from '../waterfall/valveCodec.js'
@@ -26,8 +26,21 @@ function saveLocal(key, value) {
 
 const savedMode = loadSaved(LS_MODE_KEY, 'bridge')
 
+/** Panel mở sẵn trên màn rộng, thu gọn sẵn trên điện thoại — chỗ vẽ trên máy
+ *  nhỏ quý hơn. Đọc bề ngang một lần lúc khởi tạo là đủ; sau đó người dùng tự
+ *  đóng/mở, không tự ý đổi theo họ khi xoay máy. */
+const defaultPanelOpen =
+  typeof window === 'undefined' || window.innerWidth >= UI.MOBILE_BREAKPOINT_PX
+
 export const useWaterfallStore = create((set, get) => ({
   active: false,
+
+  /** Bảng điều khiển đang mở hay thu gọn. Nằm ở store vì WhiteboardPage cần
+   *  đọc để tính chỗ cho canvas, còn WaterfallPanel cần để tự vẽ. */
+  panelOpen: defaultPanelOpen,
+  setPanelOpen: (panelOpen) => set({ panelOpen }),
+  togglePanel: () => set((s) => ({ panelOpen: !s.panelOpen })),
+
   setActive: (active) => set({ active }),
   toggleActive: () => set((s) => ({ active: !s.active })),
 

@@ -8,7 +8,8 @@ import CursorOverlay from '../components/CursorOverlay.jsx'
 import UserList from '../components/UserList.jsx'
 import AnimateOverlay from '../components/AnimateOverlay.jsx'
 import { useWaterfallStore } from '../store/waterfallStore.js'
-import { WaterfallCanvas, WaterfallPanel, useIsMobile, SHEET_COLLAPSED_PX } from '../components/Waterfall/index.js'
+import { WaterfallCanvas, WaterfallPanel, useIsMobile } from '../components/Waterfall/index.js'
+import { WATERFALL_UI as WFUI } from '../waterfall/config.js'
 import { attachWaterfallBridgeListeners } from '../waterfall/bridgeTransport.js'
 
 const CANVAS_SIZE = 4000
@@ -18,7 +19,7 @@ const MAX_ZOOM = 8
 export default function WhiteboardPage() {
   const { roomId } = useParams()
   const { token, room } = useStore()
-  const { active: waterfallActive, setActive: setWaterfallActive } = useWaterfallStore()
+  const { active: waterfallActive, setActive: setWaterfallActive, panelOpen } = useWaterfallStore()
   const isMobile = useIsMobile()
   const [searchParams] = useSearchParams()
   const canvasRef = useRef(null)
@@ -284,11 +285,14 @@ export default function WhiteboardPage() {
 
       {waterfallActive ? (
         <>
-            {/* Điện thoại: canvas chiếm trọn bề ngang, chỉ chừa chỗ cho sheet
-                thu gọn ở đáy. Desktop giữ nguyên cột panel 280px bên phải. */}
+            {/* Chỗ chừa cho bảng điều khiển suy ra từ WATERFALL_UI, không phải
+                số rời: điện thoại chừa chiều cao sheet thu gọn ở đáy; desktop
+                chừa bề ngang panel, và khi panel thu gọn thì trả lại hết. */}
             <div style={{
-              position: 'absolute', top: 0, left: 0, right: isMobile ? 0 : 312,
-              bottom: isMobile ? SHEET_COLLAPSED_PX : 0, touchAction: 'none',
+              position: 'absolute', top: 0, left: 0,
+              right: !isMobile && panelOpen ? WFUI.PANEL_WIDTH_PX + WFUI.PANEL_GAP_PX : 0,
+              bottom: isMobile ? WFUI.SHEET_COLLAPSED_PX : 0,
+              touchAction: 'none',
             }}>
               <WaterfallCanvas />
             </div>

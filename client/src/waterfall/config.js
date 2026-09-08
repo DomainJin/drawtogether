@@ -19,3 +19,21 @@ export const WATERFALL_CONFIG = {
    *  "transport close" chứ không nhận được lỗi nào. Để 8 cho có biên an toàn. */
   MAX_FRAMES_PER_PACKET: 8,
 }
+
+/** Kích thước layout của khu vực Màn nước.
+ *
+ *  Để ở đây vì cả WaterfallPanel (tự vẽ mình) lẫn WhiteboardPage (chừa chỗ cho
+ *  canvas) đều phải dùng chung một bộ số — trước đây page hardcode `right: 312`
+ *  còn panel hardcode `width: 280`, đổi một bên là lệch ngay. */
+export const WATERFALL_UI = {
+  /** Dưới ngưỡng này panel thành bottom sheet, canvas chiếm trọn bề ngang. */
+  MOBILE_BREAKPOINT_PX: 768,
+  /** Bề rộng panel cột phải trên desktop. */
+  PANEL_WIDTH_PX: 280,
+  /** Lề phải + khoảng hở giữa panel và canvas. */
+  PANEL_GAP_PX: 32,
+  /** Chiều cao phần sheet luôn nhìn thấy khi thu gọn trên mobile. */
+  SHEET_COLLAPSED_PX: 148,
+  /** Bề rộng thẻ điều khiển nổi khi thu gọn trên desktop. */
+  COMPACT_CARD_PX: 320,
+}

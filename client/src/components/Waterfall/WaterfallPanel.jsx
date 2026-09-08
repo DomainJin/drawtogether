@@ -33,7 +33,7 @@ export default function WaterfallPanel({ onExit }) {
     cols,
   } = useWaterfallStore()
 
-  const { isMobile, expanded, toggleSheet } = useWaterfallPanel()
+  const { isMobile, expanded, togglePanel } = useWaterfallPanel()
 
   const isBridge = transportMode === 'bridge'
   const connected = isBridge ? bridgeOnline : status === SOCKET_STATUS.CONNECTED
@@ -63,7 +63,7 @@ export default function WaterfallPanel({ onExit }) {
       {isMobile && (
         <div
           style={grabberWrapStyle}
-          onClick={toggleSheet}
+          onClick={togglePanel}
           role="button"
           aria-label={expanded ? 'Thu gọn bảng điều khiển' : 'Mở bảng điều khiển'}
         >
@@ -71,16 +71,17 @@ export default function WaterfallPanel({ onExit }) {
         </div>
       )}
 
-      {/* Thanh gọn trên mobile: đủ để gửi và thấy lỗi mà không che chỗ vẽ. */}
-      {isMobile && !expanded && (
-        <div style={collapsedBarStyle}>
-          <div style={collapsedStatusRowStyle}>
+      {/* Thu gọn: chỉ giữ những gì cần để gửi và thấy lỗi, trả chỗ lại cho
+          bảng vẽ. Mobile là thanh đáy, desktop là thẻ nhỏ góc dưới phải. */}
+      {!expanded && (
+        <div style={collapsedBarStyle(isMobile)}>
+          <div style={collapsedStatusRowStyle(isMobile)}>
             <div style={dotStyle(connected ? '#1D9E75' : '#999')} />
             <span>{connected ? 'Sẵn sàng gửi' : 'Chưa kết nối'}</span>
             <span style={{ marginLeft: 'auto', color: '#999', fontSize: 13 }}>
               {cols} × {rowCount}
             </span>
-            <button onClick={toggleSheet} style={backBtnStyle}>Cài đặt</button>
+            <button onClick={togglePanel} style={backBtnStyle}>Cài đặt</button>
           </div>
           <div style={sendRowStyle}>
             {sendBtn}
@@ -98,7 +99,14 @@ export default function WaterfallPanel({ onExit }) {
         <div style={sheetBodyStyle(isMobile)}>
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
             <strong style={{ fontSize: isMobile ? 17 : 15 }}>🌊 Màn nước</strong>
-            <button onClick={onExit} title="Quay lại vẽ chung" style={backBtnStyle}>← Vẽ chung</button>
+            <div style={{ display: 'flex', gap: 6 }}>
+              {!isMobile && (
+                <button onClick={togglePanel} title="Thu gọn để lấy chỗ vẽ" style={backBtnStyle}>
+                  Thu gọn →
+                </button>
+              )}
+              <button onClick={onExit} title="Quay lại vẽ chung" style={backBtnStyle}>← Vẽ chung</button>
+            </div>
           </div>
 
           <Section title="Kết nối tới thiết bị">

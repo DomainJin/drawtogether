@@ -1,54 +1,72 @@
+import { WATERFALL_UI as UI } from '../../waterfall/config.js'
+
 /** Style cho WaterfallPanel. Tách khỏi file component để phần render chỉ còn
- *  cấu trúc, và để layout mobile/desktop nằm cạnh nhau dễ đối chiếu. */
+ *  cấu trúc, và để layout mobile/desktop nằm cạnh nhau dễ đối chiếu.
+ *  Mọi kích thước lấy từ WATERFALL_UI — WhiteboardPage dùng chung bộ số đó để
+ *  chừa chỗ cho canvas. */
 
-/** Chiều cao phần sheet luôn nhìn thấy khi thu gọn (px). WhiteboardPage dùng
- *  đúng hằng số này để chừa chỗ cho canvas, nên đổi ở đây là cả hai cùng đổi. */
-export const SHEET_COLLAPSED_PX = 148
-
-/** Chiều cao tối đa khi mở rộng — chừa lại một phần canvas để còn thấy hoạ tiết
- *  mình vừa vẽ trong lúc chỉnh thông số. */
+/** Chiều cao tối đa khi mở rộng trên mobile — chừa lại một phần canvas để còn
+ *  thấy hoạ tiết vừa vẽ trong lúc chỉnh thông số. */
 const SHEET_MAX_HEIGHT = '76vh'
 
 const SAFE_BOTTOM = 'env(safe-area-inset-bottom, 0px)'
 
+const CARD_SURFACE = {
+  background: 'rgba(255,255,255,0.97)',
+  backdropFilter: 'blur(12px)',
+  border: '1px solid rgba(0,0,0,0.08)',
+  boxShadow: '0 4px 24px rgba(0,0,0,0.12)',
+  zIndex: 100,
+}
+
 export function panelStyle(isMobile, expanded) {
-  if (!isMobile) {
+  if (isMobile) {
     return {
-      position: 'fixed', right: 16, top: 80, bottom: 100, width: 280,
-      display: 'flex', flexDirection: 'column', gap: 12,
-      background: 'rgba(255,255,255,0.97)', backdropFilter: 'blur(12px)',
-      border: '1px solid rgba(0,0,0,0.08)', borderRadius: 16,
-      padding: 16, boxShadow: '0 4px 24px rgba(0,0,0,0.12)',
-      zIndex: 100, overflowY: 'auto', fontSize: 13,
+      position: 'fixed', left: 0, right: 0, bottom: 0,
+      maxHeight: expanded ? SHEET_MAX_HEIGHT : 'none',
+      display: 'flex', flexDirection: 'column',
+      background: 'rgba(255,255,255,0.98)', backdropFilter: 'blur(12px)',
+      borderTop: '1px solid rgba(0,0,0,0.08)',
+      borderRadius: '18px 18px 0 0',
+      boxShadow: '0 -4px 24px rgba(0,0,0,0.14)',
+      zIndex: 100, fontSize: 15,
+      paddingBottom: `calc(10px + ${SAFE_BOTTOM})`,
     }
   }
+
+  // Desktop thu gọn: thẻ nhỏ nổi góc dưới phải, trả lại toàn bộ bảng vẽ.
+  if (!expanded) {
+    return {
+      ...CARD_SURFACE,
+      position: 'fixed', right: 16, bottom: 16,
+      width: UI.COMPACT_CARD_PX,
+      display: 'flex', flexDirection: 'column',
+      borderRadius: 14, padding: '12px 14px', fontSize: 13,
+    }
+  }
+
   return {
-    position: 'fixed', left: 0, right: 0, bottom: 0,
-    maxHeight: expanded ? SHEET_MAX_HEIGHT : 'none',
-    display: 'flex', flexDirection: 'column',
-    background: 'rgba(255,255,255,0.98)', backdropFilter: 'blur(12px)',
-    borderTop: '1px solid rgba(0,0,0,0.08)',
-    borderRadius: '18px 18px 0 0',
-    boxShadow: '0 -4px 24px rgba(0,0,0,0.14)',
-    zIndex: 100, fontSize: 15,
-    paddingBottom: `calc(10px + ${SAFE_BOTTOM})`,
+    ...CARD_SURFACE,
+    position: 'fixed', right: 16, top: 80, bottom: 100,
+    width: UI.PANEL_WIDTH_PX,
+    display: 'flex', flexDirection: 'column', gap: 12,
+    borderRadius: 16, padding: 16, overflowY: 'auto', fontSize: 13,
   }
 }
 
-/** Vùng cuộn chứa các Section. Trên mobile chỉ tồn tại khi sheet mở. */
+/** Vùng cuộn chứa các Section. Trên desktop dùng display:contents để các
+ *  Section tham gia trực tiếp vào flex của panel như trước. */
 export function sheetBodyStyle(isMobile) {
-  return isMobile
-    // minHeight: 0 là bắt buộc — không có nó, flex item ôm trọn chiều cao nội
-    // dung và sheet tràn khỏi maxHeight thay vì cuộn bên trong.
-    ? {
-        display: 'flex', flexDirection: 'column', gap: 14,
-        padding: '4px 16px 12px', flex: '1 1 auto', minHeight: 0,
-        overflowY: 'auto', WebkitOverflowScrolling: 'touch',
-      }
-    : { display: 'contents' }
+  if (!isMobile) return { display: 'contents' }
+  // minHeight: 0 là bắt buộc — không có nó, flex item ôm trọn chiều cao nội
+  // dung và sheet tràn khỏi maxHeight thay vì cuộn bên trong.
+  return {
+    display: 'flex', flexDirection: 'column', gap: 14,
+    padding: '4px 16px 12px', flex: '1 1 auto', minHeight: 0,
+    overflowY: 'auto', WebkitOverflowScrolling: 'touch',
+  }
 }
 
-/** Thanh kéo + dòng trạng thái gọn, luôn hiện trên mobile. */
 export const grabberWrapStyle = {
   display: 'flex', flexDirection: 'column', alignItems: 'center',
   padding: '8px 0 4px', cursor: 'pointer', flexShrink: 0,
@@ -58,13 +76,18 @@ export const grabberStyle = {
   width: 40, height: 5, borderRadius: 3, background: 'rgba(0,0,0,0.18)',
 }
 
-export const collapsedBarStyle = {
-  display: 'flex', flexDirection: 'column', gap: 10,
-  padding: '6px 16px 0', flexShrink: 0,
+export function collapsedBarStyle(isMobile) {
+  return {
+    display: 'flex', flexDirection: 'column', gap: 10,
+    padding: isMobile ? '6px 16px 0' : 0, flexShrink: 0,
+  }
 }
 
-export const collapsedStatusRowStyle = {
-  display: 'flex', alignItems: 'center', gap: 8, fontSize: 14, color: '#444',
+export function collapsedStatusRowStyle(isMobile) {
+  return {
+    display: 'flex', alignItems: 'center', gap: 8,
+    fontSize: isMobile ? 14 : 13, color: '#444',
+  }
 }
 
 export const sendRowStyle = { display: 'flex', gap: 10 }
