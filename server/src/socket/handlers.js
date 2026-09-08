@@ -62,7 +62,12 @@ export function setupSocketHandlers(io, redis) {
       // Broadcast cho tất cả
       io.to(roomId).emit('sprite:clear')
     })
-    const { userId, displayName, color } = socket.user
+    const user = socket.user
+    if (!user) {
+      console.log(`[WS] unauthenticated connection (likely bridge): ${socket.id}`)
+      return
+    }
+    const { userId, displayName, color } = user
     console.log(`[WS] connected: ${displayName} (${socket.id})`)
 
     // ── JOIN ROOM ─────────────────────────────────────────────────────────────
