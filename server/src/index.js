@@ -27,7 +27,7 @@ await setupDatabase()
 
 // ── Socket.IO ─────────────────────────────────────────────────────────────────
 const io = new Server(app.server, {
-  cors: { origin: CLIENT_URL, methods: ['GET', 'POST'] },
+  cors: { origin: '*', methods: ['GET', 'POST'] },
   transports: ['websocket', 'polling'],
 })
 
