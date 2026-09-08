@@ -1,9 +1,21 @@
-import { create } from 'zustand'
+/** Màn nước thực tế: bề ngang 4 m, van cách nhau 25 mm → 40 van/m → 160 van.
+ *
+ *  Suy DEFAULT_VALVE_COUNT ra từ hai số vật lý này thay vì gõ thẳng 160: đổi
+ *  chiều dài màn chỉ phải sửa một chỗ. Trước đây mặc định là 80 (màn 2 m), nên
+ *  khi app chưa nhận được status từ bridge nó khai báo 80 van và gửi frame 10
+ *  byte cho thiết bị 160 van — hoạ tiết bị lặp thành hai nửa giống nhau.
+ *
+ *  Đây chỉ là giá trị KHỞI ĐẦU. Khi bridge báo valve_count thật từ thiết bị,
+ *  số đó thắng (applyBridgeStatus → resizeCols). */
+const CURTAIN_WIDTH_M = 4
+const VALVES_PER_METER = 40
 
 export const WATERFALL_CONFIG = {
   DEFAULT_WS_PORT: 3333,
   DEFAULT_HTTP_PORT: 8080,
-  DEFAULT_VALVE_COUNT: 80,
+  CURTAIN_WIDTH_M,
+  VALVES_PER_METER,
+  DEFAULT_VALVE_COUNT: Math.round(CURTAIN_WIDTH_M * VALVES_PER_METER),
   DEFAULT_ROW_COUNT: 24,
   MIN_ROW_COUNT: 2,
   MAX_ROW_COUNT: 64,
