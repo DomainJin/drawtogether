@@ -15,6 +15,13 @@ export const useStore = create((set, get) => ({
     if (token && user) set({ token, user: JSON.parse(user) })
     return !!token
   },
+  /** Xoá phiên đăng nhập. Dùng khi server từ chối token (vd JWT_SECRET đổi) —
+   *  token đó sẽ không bao giờ hợp lệ lại, phải đăng nhập lấy token mới. */
+  clearAuth: () => {
+    localStorage.removeItem('wb_token')
+    localStorage.removeItem('wb_user')
+    set({ user: null, token: null })
+  },
 
   // Room
   room: null,

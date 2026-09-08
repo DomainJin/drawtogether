@@ -84,6 +84,21 @@ export function useSocket(roomId, canvasRef) {
       console.log('[Socket] disconnected:', reason)
     })
 
+    /** Không có handler nào ở đây thì mọi lỗi bắt tay đều im lặng: client cấu
+     *  hình reconnectionAttempts: Infinity nên nó thử lại mãi, app trông vẫn
+     *  bình thường trong khi socket chưa bao giờ nối được. */
+    socketInstance.on('connect_error', (err) => {
+      setConnected(false)
+      useWaterfallStore.getState().resetBridgeLink()
+      console.error('[Socket] connect_error:', err.message)
+      if (err.message === 'Invalid token') {
+        // Token cũ không bao giờ hợp lệ trở lại — retry tiếp là vô ích.
+        // Xoá phiên để app đưa người dùng về màn đăng nhập lấy token mới.
+        socketInstance?.close()
+        useStore.getState().clearAuth()
+      }
+    })
+
     // Ai đó vào phòng
     socketInstance.on('user:joined', (user) => addUser(user))
 
