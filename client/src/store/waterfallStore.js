@@ -4,7 +4,7 @@ import { createEmptyGrid, resizeGrid, setCell as setCellPure } from '../waterfal
 import { ValveSocket, SOCKET_STATUS } from '../waterfall/valveSocket.js'
 import { buildAnimationFrames, gridToOpenValveRows } from '../waterfall/valveCodec.js'
 import { cmdAllOff, cmdGetConfig } from '../waterfall/commands.js'
-import { sendFramesViaBridge, sendCmdViaBridge } from '../waterfall/bridgeTransport.js'
+import { sendFramesViaBridge, sendCmdViaBridge, isBridgeSocketReady } from '../waterfall/bridgeTransport.js'
 
 let directSocket = null
 
@@ -39,6 +39,16 @@ export const useWaterfallStore = create((set, get) => ({
 
   bridgeOnline: false,
   setBridgeOnline: (bridgeOnline) => set({ bridgeOnline }),
+
+  /** Socket tới server vừa rớt. Mọi thông tin về bridge/thiết bị đều đến qua
+   *  socket đó nên giờ đã hết giá trị — không giữ đèn xanh cũ, nếu không panel
+   *  báo "đã kết nối" trong khi bấm Gửi thì hỏng. Chỉ đụng tới state của chế độ
+   *  bridge, chế độ LAN dùng socket riêng. */
+  resetBridgeLink: () => set((s) => (
+    s.transportMode === 'bridge'
+      ? { bridgeOnline: false, status: SOCKET_STATUS.DISCONNECTED, valveCount: null, valveBytes: null, tickMs: null }
+      : { bridgeOnline: false }
+  )),
   applyBridgeStatus: (status) => {
     const patch = {}
     if (status.status) patch.status = status.status
@@ -134,6 +144,7 @@ export const useWaterfallStore = create((set, get) => ({
     set({ sendError: null })
     try {
       if (transportMode === 'bridge') {
+        if (!isBridgeSocketReady()) throw new Error('Mất kết nối tới server, đang thử kết nối lại')
         if (!bridgeOnline) throw new Error('Chưa có bridge nào kết nối tới màn nước')
         await sendCmdViaBridge(cmdAllOff())
       } else {
@@ -149,12 +160,19 @@ export const useWaterfallStore = create((set, get) => ({
   sendPattern: async () => {
     const { grid, rowIntervalMs, valveCount, cols, transportMode, status, bridgeOnline } = get()
 
+    // Chế độ bridge cần CẢ hai: socket tới server còn sống và có bridge online.
+    // Chỉ tin mỗi bridgeOnline là sai — cờ đó do server đẩy xuống từ trước, nó
+    // vẫn true sau khi socket đã rớt.
     const ready = transportMode === 'bridge'
-      ? bridgeOnline
+      ? isBridgeSocketReady() && bridgeOnline
       : status === SOCKET_STATUS.CONNECTED && !!directSocket
 
     if (!ready) {
-      set({ sendError: 'Chưa kết nối thiết bị' })
+      set({
+        sendError: transportMode === 'bridge' && !isBridgeSocketReady()
+          ? 'Mất kết nối tới server, đang thử kết nối lại'
+          : 'Chưa kết nối thiết bị',
+      })
       return
     }
 

@@ -16,6 +16,17 @@ const CLIENT_URL = process.env.CLIENT_URL || 'http://localhost:5173'
 const JWT_SECRET = process.env.JWT_SECRET || 'dev-secret-change-in-production'
 const REDIS_URL = process.env.REDIS_URL || null
 
+// ── Lưới an toàn cấp process ─────────────────────────────────────────────────
+// Node >= 15 thoát ngay khi có unhandled rejection. Với server realtime, để
+// một lỗi lẻ giết process đồng nghĩa mọi client trong phòng bị rớt socket
+// giữa chừng. Log đầy đủ stack (đọc được ở Deploy Logs) và giữ process sống.
+process.on('unhandledRejection', (reason) => {
+  console.error('🔥 Unhandled rejection:', reason)
+})
+process.on('uncaughtException', (err) => {
+  console.error('🔥 Uncaught exception:', err)
+})
+
 // ── Fastify ───────────────────────────────────────────────────────────────────
 const app = Fastify({ logger: { level: 'info' } })
 
@@ -84,6 +95,9 @@ app.get('/health', async () => ({
   // Chỉ trả boolean — không bao giờ lộ giá trị secret ra ngoài. Dùng để verify
   // biến môi trường đã tới được process sau mỗi lần deploy.
   waterfallBridgeConfigured: Boolean(process.env.WATERFALL_BRIDGE_SECRET),
+  // Giây kể từ lần boot gần nhất. Tụt về ~0 nghĩa là process vừa restart —
+  // dùng để phân biệt "client rớt mạng" với "server crash làm rớt cả phòng".
+  uptimeSec: Math.round(process.uptime()),
 }))
 await setupRoomRoutes(app)
 await setupAnimateRoute(app)

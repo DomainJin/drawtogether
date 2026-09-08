@@ -4,9 +4,21 @@ function getBridgeSecret() {
   return process.env.WATERFALL_BRIDGE_SECRET || null
 }
 
+/** Đếm bridge đang online.
+ *
+ *  fetchSockets() đi qua Redis adapter nên là lời gọi liên node — nó có thể
+ *  timeout hoặc reject khi Redis chập chờn. Trước đây lỗi đó thành unhandled
+ *  rejection và làm process thoát (Node >= 15), kéo theo TOÀN BỘ client trong
+ *  phòng bị rớt socket. Nuốt lỗi tại đây và trả -1 để caller phân biệt được
+ *  "không có bridge" (0) với "không đếm được" (-1). */
 async function bridgeCount(io) {
-  const sockets = await io.in(BRIDGE_ROOM).fetchSockets()
-  return sockets.length
+  try {
+    const sockets = await io.in(BRIDGE_ROOM).fetchSockets()
+    return sockets.length
+  } catch (err) {
+    console.error('[Waterfall] Không đếm được bridge:', err?.message || err)
+    return -1
+  }
 }
 
 let lastKnownStatus = null
@@ -27,6 +39,7 @@ export function setupWaterfallHandlers(io) {
       socket.emit('waterfall:bridge-online', { online: count > 0 })
       if (lastKnownStatus) socket.emit('waterfall:status', lastKnownStatus)
     })
+
 
     socket.on('waterfall:bridge:register', ({ secret: given, label } = {}, ack) => {
       const expected = getBridgeSecret()
@@ -53,27 +66,46 @@ export function setupWaterfallHandlers(io) {
 
     socket.on('waterfall:frames', async (frames, ack) => {
       if (socket.isWaterfallBridge) return
-      if ((await bridgeCount(io)) === 0) {
-        return ack?.({ ok: false, error: 'Chưa có bridge nào kết nối tới màn nước' })
+      try {
+        const count = await bridgeCount(io)
+        if (count === 0) {
+          return ack?.({ ok: false, error: 'Chưa có bridge nào kết nối tới màn nước' })
+        }
+        if (count < 0) {
+          return ack?.({ ok: false, error: 'Server không kiểm tra được bridge, thử lại' })
+        }
+        io.to(BRIDGE_ROOM).emit('waterfall:frames', frames)
+        ack?.({ ok: true })
+      } catch (err) {
+        // Trả lỗi về client thay vì để rejection thoát ra và giết process.
+        console.error('[Waterfall] Relay frames lỗi:', err?.message || err)
+        ack?.({ ok: false, error: 'Server lỗi khi chuyển hoạ tiết tới bridge' })
       }
-      io.to(BRIDGE_ROOM).emit('waterfall:frames', frames)
-      ack?.({ ok: true })
     })
 
     socket.on('waterfall:cmd', async (cmd, ack) => {
       if (socket.isWaterfallBridge) return
-      if ((await bridgeCount(io)) === 0) {
-        return ack?.({ ok: false, error: 'Chưa có bridge nào kết nối tới màn nước' })
+      try {
+        const count = await bridgeCount(io)
+        if (count === 0) {
+          return ack?.({ ok: false, error: 'Chưa có bridge nào kết nối tới màn nước' })
+        }
+        if (count < 0) {
+          return ack?.({ ok: false, error: 'Server không kiểm tra được bridge, thử lại' })
+        }
+        io.to(BRIDGE_ROOM).emit('waterfall:cmd', cmd)
+        ack?.({ ok: true })
+      } catch (err) {
+        console.error('[Waterfall] Relay cmd lỗi:', err?.message || err)
+        ack?.({ ok: false, error: 'Server lỗi khi chuyển lệnh tới bridge' })
       }
-      io.to(BRIDGE_ROOM).emit('waterfall:cmd', cmd)
-      ack?.({ ok: true })
     })
 
     socket.on('disconnecting', () => {
       if (!socket.isWaterfallBridge) return
       console.log(`[Waterfall] Bridge "${socket.waterfallLabel}" ngắt kết nối`)
       setImmediate(async () => {
-        if ((await bridgeCount(io)) === 0) {
+        if ((await bridgeCount(io)) === 0) {  // -1 (không đếm được) không coi là offline
           lastKnownStatus = { status: 'disconnected', valveCount: null, valveBytes: null, tickMs: null, error: null }
           io.emit('waterfall:bridge-online', { online: false })
           io.emit('waterfall:status', lastKnownStatus)

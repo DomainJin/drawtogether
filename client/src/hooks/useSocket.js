@@ -76,9 +76,12 @@ export function useSocket(roomId, canvasRef) {
       })
     })
 
-    socketInstance.on('disconnect', () => {
+    socketInstance.on('disconnect', (reason) => {
       setConnected(false)
-      console.log('[Socket] disconnected')
+      // Trạng thái bridge/thiết bị chỉ đi qua socket này — socket chết thì các
+      // đèn đó không còn phản ánh sự thật nữa.
+      useWaterfallStore.getState().resetBridgeLink()
+      console.log('[Socket] disconnected:', reason)
     })
 
     // Ai đó vào phòng
