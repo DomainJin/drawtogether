@@ -7,6 +7,9 @@ import Toolbar from '../components/Toolbar.jsx'
 import CursorOverlay from '../components/CursorOverlay.jsx'
 import UserList from '../components/UserList.jsx'
 import AnimateOverlay from '../components/AnimateOverlay.jsx'
+import { useWaterfallStore } from '../store/waterfallStore.js'
+import { WaterfallCanvas, WaterfallPanel } from '../components/Waterfall/index.js'
+import { attachWaterfallBridgeListeners } from '../waterfall/bridgeTransport.js'
 
 const CANVAS_SIZE = 4000
 const MIN_ZOOM = 0.05
@@ -15,6 +18,7 @@ const MAX_ZOOM = 8
 export default function WhiteboardPage() {
   const { roomId } = useParams()
   const { token, room } = useStore()
+  const { active: waterfallActive, setActive: setWaterfallActive } = useWaterfallStore()
   const canvasRef = useRef(null)
   const stageRef = useRef(null)       // div bọc canvas, ta transform cái này
   const containerRef = useRef(null)   // viewport cố định full screen
@@ -251,87 +255,114 @@ export default function WhiteboardPage() {
       onTouchMove={onTouchMove}
       onTouchEnd={onTouchEnd}
     >
-      {/* Canvas layer — transform ở đây */}
-      <div
-        ref={stageRef}
-        style={{
-          position: 'absolute',
-          top: 0, left: 0,
-          width: CANVAS_SIZE,
-          height: CANVAS_SIZE,
-          transformOrigin: '0 0',
-          willChange: 'transform',
-        }}
-      >
-        <WhiteboardCanvas canvasRef={canvasRef} containerRef={containerRef} camRef={cam} />
-        <CursorOverlay canvasRef={canvasRef} />
-      </div>
-
-      {/* Toggle UI */}
+      {/* Waterfall toggle — luôn hiển thị */}
       <button
-        onClick={() => setUiVisible(v => !v)}
+        onClick={() => setWaterfallActive(!waterfallActive)}
+        title={waterfallActive ? 'Quay lại vẽ chung' : 'Vẽ hoạ tiết gửi sang màn nước'}
         style={{
-          position: 'fixed', top: 12, right: 12, zIndex: 300,
-          width: 36, height: 36, borderRadius: 8,
-          background: 'rgba(255,255,255,0.95)',
-          border: '1px solid rgba(0,0,0,0.1)',
-          cursor: 'pointer', fontSize: 16,
+          position: 'fixed', top: 12, right: 12, zIndex: 400,
+          width: 40, height: 40, borderRadius: 10,
+          background: waterfallActive ? '#378ADD' : 'rgba(255,255,255,0.95)',
+          border: `1px solid ${waterfallActive ? '#378ADD' : 'rgba(0,0,0,0.1)'}`,
+          cursor: 'pointer', fontSize: 18,
           display: 'flex', alignItems: 'center', justifyContent: 'center',
           boxShadow: '0 2px 8px rgba(0,0,0,0.1)',
+          color: waterfallActive ? '#fff' : '#378ADD',
+          fontWeight: 600,
         }}
-      >{uiVisible ? '👁' : '✏️'}</button>
+      >{waterfallActive ? '✏️' : '🌊'}</button>
 
-      {uiVisible && (
+      {waterfallActive ? (
         <>
-          <div style={{
-            position: 'fixed', top: 12, left: '50%', transform: 'translateX(-50%)',
-            display: 'flex', alignItems: 'center', gap: 8,
-            background: 'rgba(255,255,255,0.95)', backdropFilter: 'blur(12px)',
-            border: '1px solid rgba(0,0,0,0.08)', borderRadius: 12,
-            padding: '7px 14px', zIndex: 200,
-            boxShadow: '0 2px 12px rgba(0,0,0,0.08)',
-            whiteSpace: 'nowrap', maxWidth: 'calc(100vw - 120px)',
-          }}>
-            <span style={{ fontSize: 16 }}>🎨</span>
-            <span style={{ fontWeight: 600, fontSize: 13 }}>{room?.name || roomId}</span>
-            <button onClick={() => { navigator.clipboard.writeText(window.location.href); alert('Đã copy!') }} style={{
-              fontSize: 11, padding: '3px 8px', borderRadius: 5,
-              border: '1px solid rgba(0,0,0,0.12)', background: 'transparent',
-              cursor: 'pointer', color: '#378ADD',
-            }}>📋 Copy</button>
+          <div style={{ position: 'absolute', inset: 0, right: 312 }}>
+            <WaterfallCanvas />
+          </div>
+          <WaterfallPanel onExit={() => setWaterfallActive(false)} />
+        </>
+      ) : (
+        <>
+          <div
+            ref={stageRef}
+            style={{
+              position: 'absolute',
+              top: 0, left: 0,
+              width: CANVAS_SIZE,
+              height: CANVAS_SIZE,
+              transformOrigin: '0 0',
+              willChange: 'transform',
+            }}
+          >
+            <WhiteboardCanvas canvasRef={canvasRef} containerRef={containerRef} camRef={cam} />
+            <CursorOverlay canvasRef={canvasRef} />
           </div>
 
-          {/* Zoom controls */}
-          <div style={{
-            position: 'fixed', bottom: 90, left: 12, zIndex: 200,
-            display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4,
-          }}>
-            {[
-              { label: '+', action: () => doZoom(1.3) },
-              { label: `${Math.round(zoom * 100)}%`, action: () => { cam.current.zoom = 1; applyTransform() }, style: { fontSize: 10, width: 38 } },
-              { label: '−', action: () => doZoom(1 / 1.3) },
-            ].map((b, i) => (
-              <button key={i} onClick={b.action} style={{
-                width: 34, height: 28, borderRadius: 6, cursor: 'pointer',
-                background: 'rgba(255,255,255,0.95)',
-                border: '1px solid rgba(0,0,0,0.12)',
-                fontSize: b.style?.fontSize || 16, fontWeight: 600,
-                ...(b.style || {}),
-              }}>{b.label}</button>
-            ))}
-          </div>
+          {/* Toggle UI */}
+          <button
+            onClick={() => setUiVisible(v => !v)}
+            style={{
+              position: 'fixed', top: 12, right: 12, zIndex: 300,
+              width: 36, height: 36, borderRadius: 8,
+              background: 'rgba(255,255,255,0.95)',
+              border: '1px solid rgba(0,0,0,0.1)',
+              cursor: 'pointer', fontSize: 16,
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              boxShadow: '0 2px 8px rgba(0,0,0,0.1)',
+            }}
+          >{uiVisible ? '👁' : '✏️'}</button>
 
-          {/* Hint */}
-          <div style={{
-            position: 'fixed', bottom: 14, left: '50%', transform: 'translateX(-50%)',
-            fontSize: 10, color: 'rgba(0,0,0,0.35)', zIndex: 200,
-            pointerEvents: 'none', whiteSpace: 'nowrap',
-          }}>
-            PC: Ctrl+scroll zoom · Space+drag pan · Mobile: 2 ngón zoom/pan
-          </div>
+          {uiVisible && (
+            <>
+              <div style={{
+                position: 'fixed', top: 12, left: '50%', transform: 'translateX(-50%)',
+                display: 'flex', alignItems: 'center', gap: 8,
+                background: 'rgba(255,255,255,0.95)', backdropFilter: 'blur(12px)',
+                border: '1px solid rgba(0,0,0,0.08)', borderRadius: 12,
+                padding: '7px 14px', zIndex: 200,
+                boxShadow: '0 2px 12px rgba(0,0,0,0.08)',
+                whiteSpace: 'nowrap', maxWidth: 'calc(100vw - 120px)',
+              }}>
+                <span style={{ fontSize: 16 }}>🎨</span>
+                <span style={{ fontWeight: 600, fontSize: 13 }}>{room?.name || roomId}</span>
+                <button onClick={() => { navigator.clipboard.writeText(window.location.href); alert('Đã copy!') }} style={{
+                  fontSize: 11, padding: '3px 8px', borderRadius: 5,
+                  border: '1px solid rgba(0,0,0,0.12)', background: 'transparent',
+                  cursor: 'pointer', color: '#378ADD',
+                }}>📋 Copy</button>
+              </div>
 
-          <UserList />
-          <Toolbar onExport={handleExport} />
+              {/* Zoom controls */}
+              <div style={{
+                position: 'fixed', bottom: 90, left: 12, zIndex: 200,
+                display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4,
+              }}>
+                {[
+                  { label: '+', action: () => doZoom(1.3) },
+                  { label: `${Math.round(zoom * 100)}%`, action: () => { cam.current.zoom = 1; applyTransform() }, style: { fontSize: 10, width: 38 } },
+                  { label: '−', action: () => doZoom(1 / 1.3) },
+                ].map((b, i) => (
+                  <button key={i} onClick={b.action} style={{
+                    width: 34, height: 28, borderRadius: 6, cursor: 'pointer',
+                    background: 'rgba(255,255,255,0.95)',
+                    border: '1px solid rgba(0,0,0,0.12)',
+                    fontSize: b.style?.fontSize || 16, fontWeight: 600,
+                    ...(b.style || {}),
+                  }}>{b.label}</button>
+                ))}
+              </div>
+
+              {/* Hint */}
+              <div style={{
+                position: 'fixed', bottom: 14, left: '50%', transform: 'translateX(-50%)',
+                fontSize: 10, color: 'rgba(0,0,0,0.35)', zIndex: 200,
+                pointerEvents: 'none', whiteSpace: 'nowrap',
+              }}>
+                PC: Ctrl+scroll zoom · Space+drag pan · Mobile: 2 ngón zoom/pan
+              </div>
+
+              <UserList />
+              <Toolbar onExport={handleExport} />
+            </>
+          )}
         </>
       )}
 

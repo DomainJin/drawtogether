@@ -1,6 +1,8 @@
 import { useEffect, useRef, useCallback } from 'react'
 import { io } from 'socket.io-client'
 import { useStore } from '../store/index.js'
+import { useWaterfallStore } from '../store/waterfallStore.js'
+import { attachWaterfallBridgeListeners } from '../waterfall/bridgeTransport.js'
 
 const SERVER_URL = import.meta.env.VITE_SERVER_URL || 'http://localhost:3001'
 
@@ -38,9 +40,14 @@ export function useSocket(roomId, canvasRef) {
       reconnectionAttempts: Infinity,
       reconnectionDelay: 1000,
       reconnectionDelayMax: 5000,
-      // Ping để giữ kết nối không bị Railway timeout
       pingInterval: 25000,
       pingTimeout: 20000,
+    })
+
+    // Bridge relay cho màn nước
+    attachWaterfallBridgeListeners(socketInstance, {
+      onStatus: (status) => useWaterfallStore.getState().applyBridgeStatus(status),
+      onBridgeOnline: (online) => useWaterfallStore.getState().setBridgeOnline(online),
     })
 
     socketInstance.on('connect', () => {

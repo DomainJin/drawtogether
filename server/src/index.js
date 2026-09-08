@@ -8,6 +8,7 @@ import Redis from 'ioredis'
 import { setupRoomRoutes } from './routes/rooms.js'
 import { setupAnimateRoute } from './routes/animate.js'
 import { setupSocketHandlers } from './socket/handlers.js'
+import { setupWaterfallHandlers } from './socket/waterfallHandlers.js'
 import { setupDatabase } from './db/index.js'
 
 const PORT = process.env.PORT || 3001
@@ -69,6 +70,7 @@ io.use(async (socket, next) => {
 
 // ── Socket handlers ───────────────────────────────────────────────────────────
 setupSocketHandlers(io, redisClient)
+setupWaterfallHandlers(io)
 
 // ── HTTP Routes ───────────────────────────────────────────────────────────────
 app.get('/health', async () => ({ status: 'ok', ts: Date.now() }))
