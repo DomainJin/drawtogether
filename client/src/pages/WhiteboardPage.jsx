@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, useCallback } from 'react'
-import { useParams, useNavigate } from 'react-router-dom'
+import { useParams, useNavigate, useSearchParams } from 'react-router-dom'
 import { useStore } from '../store/index.js'
 import { useSocket, getSocket } from '../hooks/useSocket.js'
 import WhiteboardCanvas from '../components/WhiteboardCanvas.jsx'
@@ -19,6 +19,7 @@ export default function WhiteboardPage() {
   const { roomId } = useParams()
   const { token, room } = useStore()
   const { active: waterfallActive, setActive: setWaterfallActive } = useWaterfallStore()
+  const [searchParams] = useSearchParams()
   const canvasRef = useRef(null)
   const stageRef = useRef(null)       // div bọc canvas, ta transform cái này
   const containerRef = useRef(null)   // viewport cố định full screen
@@ -39,6 +40,12 @@ export default function WhiteboardPage() {
   useEffect(() => {
     if (!token) navigate('/', { replace: true })
   }, [token, navigate])
+
+  useEffect(() => {
+    if (searchParams.get('mode') === 'waterfall') {
+      setWaterfallActive(true)
+    }
+  }, [searchParams, setWaterfallActive])
 
   useEffect(() => {
     document.body.style.overflow = 'hidden'

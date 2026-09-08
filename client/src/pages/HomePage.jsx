@@ -9,6 +9,7 @@ export default function HomePage() {
   const [name, setName] = useState('')
   const [roomCode, setRoomCode] = useState('')
   const [loading, setLoading] = useState(false)
+  const [mode, setMode] = useState('board')
   const { setAuth, loadAuth, token } = useStore()
   const navigate = useNavigate()
 
@@ -32,10 +33,10 @@ export default function HomePage() {
       const res = await fetch(`${SERVER_URL}/api/rooms`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-        body: JSON.stringify({ name: `Board của ${name}` }),
+        body: JSON.stringify({ name: mode === 'waterfall' ? `Màn nước của ${name}` : `Board của ${name}` }),
       })
       const data = await res.json()
-      navigate(`/${data.room.id}`)
+      navigate(`/${data.room.id}${mode === 'waterfall' ? '?mode=waterfall' : ''}`)
     } catch (e) {
       alert('Lỗi kết nối server')
     } finally {
@@ -49,7 +50,7 @@ export default function HomePage() {
     setLoading(true)
     try {
       await getOrCreateToken(name)
-      navigate(`/${roomCode.trim()}`)
+      navigate(`/${roomCode.trim()}${mode === 'waterfall' ? '?mode=waterfall' : ''}`)
     } finally {
       setLoading(false)
     }
@@ -88,16 +89,37 @@ export default function HomePage() {
           }}
         />
 
+        <div style={{ display: 'flex', gap: 6, marginBottom: 12, background: '#f5f5f5', borderRadius: 10, padding: 4 }}>
+          <button
+            onClick={() => setMode('board')}
+            style={{
+              flex: 1, padding: '8px', borderRadius: 8, border: 'none', cursor: 'pointer',
+              background: mode === 'board' ? '#1a1a1a' : 'transparent',
+              color: mode === 'board' ? '#fff' : '#1a1a1a',
+              fontSize: 13, fontWeight: 600,
+            }}
+          >🎨 Vẽ chung</button>
+          <button
+            onClick={() => setMode('waterfall')}
+            style={{
+              flex: 1, padding: '8px', borderRadius: 8, border: 'none', cursor: 'pointer',
+              background: mode === 'waterfall' ? '#378ADD' : 'transparent',
+              color: mode === 'waterfall' ? '#fff' : '#378ADD',
+              fontSize: 13, fontWeight: 600,
+            }}
+          >🌊 Màn nước</button>
+        </div>
+
         <button
           onClick={handleCreate}
           disabled={loading}
           style={{
             width: '100%', padding: '12px', borderRadius: 10,
-            background: '#1a1a1a', color: '#fff', border: 'none',
+            background: mode === 'waterfall' ? '#378ADD' : '#1a1a1a', color: '#fff', border: 'none',
             fontSize: 15, fontWeight: 600, cursor: 'pointer', marginBottom: 12,
           }}
         >
-          {loading ? '...' : '✨ Tạo bảng mới'}
+          {loading ? '...' : (mode === 'waterfall' ? '🌊 Tạo phòng màn nước' : '✨ Tạo bảng mới')}
         </button>
 
         <div style={{ display: 'flex', gap: 8 }}>
