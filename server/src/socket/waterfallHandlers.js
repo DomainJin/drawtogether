@@ -15,6 +15,9 @@ export function setupWaterfallHandlers(io) {
   const secret = getBridgeSecret()
   if (!secret) {
     console.warn('⚠️  WATERFALL_BRIDGE_SECRET chưa cấu hình — mode Màn nước (bridge relay) sẽ từ chối mọi bridge cho tới khi đặt biến môi trường này.')
+  } else {
+    // Log độ dài thay vì giá trị — đủ để phát hiện paste thừa space mà không lộ secret.
+    console.log(`✅ WATERFALL_BRIDGE_SECRET đã cấu hình (${secret.length} ký tự)`)
   }
 
   io.on('connection', (socket) => {

@@ -78,7 +78,13 @@ setupWaterfallHandlers(io)
 setupSocketHandlers(io, redisClient)
 
 // ── HTTP Routes ───────────────────────────────────────────────────────────────
-app.get('/health', async () => ({ status: 'ok', ts: Date.now() }))
+app.get('/health', async () => ({
+  status: 'ok',
+  ts: Date.now(),
+  // Chỉ trả boolean — không bao giờ lộ giá trị secret ra ngoài. Dùng để verify
+  // biến môi trường đã tới được process sau mỗi lần deploy.
+  waterfallBridgeConfigured: Boolean(process.env.WATERFALL_BRIDGE_SECRET),
+}))
 await setupRoomRoutes(app)
 await setupAnimateRoute(app)
 
