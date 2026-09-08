@@ -11,4 +11,11 @@ export const WATERFALL_CONFIG = {
   MIN_ROW_INTERVAL_MS: 10,
   MAX_ROW_INTERVAL_MS: 300,
   MAX_VALVES: 512,
+  /** Số frame tối đa nhét trong MỘT gói socket.io.
+   *
+   *  Mỗi Uint8Array là một "binary attachment", và socket.io-parser mặc định
+   *  chặn ở maxAttachments = 10: vượt ngưỡng thì parser phía server ném
+   *  "too many attachments" và ĐÓNG LUÔN kết nối — client chỉ thấy
+   *  "transport close" chứ không nhận được lỗi nào. Để 8 cho có biên an toàn. */
+  MAX_FRAMES_PER_PACKET: 8,
 }
