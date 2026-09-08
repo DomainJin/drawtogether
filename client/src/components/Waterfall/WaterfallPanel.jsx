@@ -1,6 +1,13 @@
 import { useWaterfallStore } from '../../store/waterfallStore.js'
 import { WATERFALL_CONFIG as CFG } from '../../waterfall/config.js'
 import { SOCKET_STATUS } from '../../waterfall/valveSocket.js'
+import { useWaterfallPanel } from './useWaterfallPanel.js'
+import {
+  backBtnStyle, collapsedBarStyle, collapsedStatusRowStyle, dangerBtnStyle,
+  dotStyle, grabberStyle, grabberWrapStyle, inputStyle, modeTabStyle,
+  panelStyle, primaryBtnStyle, rangeStyle, secondaryBtnStyle, sendRowStyle,
+  sheetBodyStyle,
+} from './panelStyles.js'
 
 const STATUS_LABEL = {
   [SOCKET_STATUS.DISCONNECTED]: 'Chưa kết nối',
@@ -26,144 +33,207 @@ export default function WaterfallPanel({ onExit }) {
     cols,
   } = useWaterfallStore()
 
+  const { isMobile, expanded, toggleSheet } = useWaterfallPanel()
+
   const isBridge = transportMode === 'bridge'
   const connected = isBridge ? bridgeOnline : status === SOCKET_STATUS.CONNECTED
   const deviceReady = isBridge ? (bridgeOnline && status === SOCKET_STATUS.CONNECTED) : connected
+  const canSend = connected && !sending
 
   const handleConnectToggle = () => {
     if (status === SOCKET_STATUS.CONNECTED || status === SOCKET_STATUS.CONNECTING) disconnect()
     else connect()
   }
 
+  const sendBtn = (
+    <button
+      onClick={sendPattern}
+      disabled={!canSend}
+      style={{
+        ...primaryBtnStyle(isMobile), flex: 1,
+        opacity: canSend ? 1 : 0.5, cursor: canSend ? 'pointer' : 'not-allowed',
+      }}
+    >
+      {sending ? 'Đang gửi...' : '🌊 Gửi tới màn nước'}
+    </button>
+  )
+
   return (
-    <div style={{
-      position: 'fixed', right: 16, top: 80, bottom: 100, width: 280,
-      display: 'flex', flexDirection: 'column', gap: 12,
-      background: 'rgba(255,255,255,0.97)', backdropFilter: 'blur(12px)',
-      border: '1px solid rgba(0,0,0,0.08)', borderRadius: 16,
-      padding: 16, boxShadow: '0 4px 24px rgba(0,0,0,0.12)',
-      zIndex: 100, overflowY: 'auto', fontSize: 13,
-    }}>
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-        <strong style={{ fontSize: 15 }}>🌊 Màn nước</strong>
-        <button onClick={onExit} title="Quay lại vẽ chung" style={backBtnStyle}>← Vẽ chung</button>
-      </div>
-
-      <Section title="Kết nối tới thiết bị">
-        <div style={{ display: 'flex', borderRadius: 8, overflow: 'hidden', border: '1.5px solid #ddd' }}>
-          <ModeTab active={isBridge} onClick={() => setTransportMode('bridge')}>Qua server</ModeTab>
-          <ModeTab active={!isBridge} onClick={() => setTransportMode('direct')}>Trực tiếp (LAN)</ModeTab>
-        </div>
-
-        {isBridge ? (
-          <>
-            <p style={{ color: '#999', margin: 0 }}>
-              Gửi qua server whiteboard tới bridge chạy trên máy cắm dây với
-              thiết bị. Dùng được từ bất kỳ đâu, kể cả khi whiteboard chạy HTTPS.
-            </p>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-              <div style={{ width: 8, height: 8, borderRadius: '50%', background: bridgeOnline ? '#1D9E75' : '#999' }} />
-              <span style={{ color: '#666' }}>{bridgeOnline ? 'Bridge đã kết nối server' : 'Chưa có bridge nào online'}</span>
-            </div>
-            {bridgeOnline && (
-              <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                <div style={{ width: 8, height: 8, borderRadius: '50%', background: STATUS_COLOR[status] || '#999' }} />
-                <span style={{ color: '#666' }}>Bridge → thiết bị: {STATUS_LABEL[status] || 'Không rõ'}</span>
-              </div>
-            )}
-            {!bridgeOnline && (
-              <div style={{ color: '#EF9F27' }}>Chưa chạy bridge trên máy có dây tới màn nước.</div>
-            )}
-          </>
-        ) : (
-          <>
-            <div style={{ display: 'flex', gap: 6 }}>
-              <input
-                value={ip}
-                onChange={(e) => setIp(e.target.value)}
-                placeholder="IP bộ điều khiển (192.168.1.x)"
-                disabled={status === SOCKET_STATUS.CONNECTED}
-                style={{ ...inputStyle, flex: 1 }}
-              />
-              <input
-                type="number"
-                value={wsPort}
-                onChange={(e) => setWsPort(Number(e.target.value) || CFG.DEFAULT_WS_PORT)}
-                disabled={status === SOCKET_STATUS.CONNECTED}
-                style={{ ...inputStyle, width: 64 }}
-              />
-            </div>
-            <button onClick={handleConnectToggle} style={status === SOCKET_STATUS.CONNECTED ? dangerBtnStyle : primaryBtnStyle}>
-              {status === SOCKET_STATUS.CONNECTED ? 'Ngắt kết nối' : status === SOCKET_STATUS.CONNECTING ? 'Đang kết nối...' : 'Kết nối'}
-            </button>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 2 }}>
-              <div style={{ width: 8, height: 8, borderRadius: '50%', background: STATUS_COLOR[status] }} />
-              <span style={{ color: '#666' }}>{STATUS_LABEL[status]}</span>
-            </div>
-            <div style={{ color: '#EF9F27' }}>Chỉ dùng được khi mở whiteboard qua http:// cùng LAN với thiết bị.</div>
-          </>
-        )}
-
-        {valveCount != null && (
-          <div style={{ color: '#666' }}>Van: {valveCount} ({valveBytes} byte/frame)</div>
-        )}
-        {error && <div style={{ color: '#E24B4A' }}>{error}</div>}
-      </Section>
-
-      <Section title="Hoạ tiết">
-        <Field label={`Số hàng: ${rowCount}`}>
-          <input
-            type="range"
-            min={CFG.MIN_ROW_COUNT}
-            max={CFG.MAX_ROW_COUNT}
-            value={rowCount}
-            onChange={(e) => setRowCount(Number(e.target.value))}
-            style={{ width: '100%' }}
-          />
-        </Field>
-        <Field label={`Tốc độ rơi: ${rowIntervalMs} ms/hàng`}>
-          <input
-            type="range"
-            min={CFG.MIN_ROW_INTERVAL_MS}
-            max={CFG.MAX_ROW_INTERVAL_MS}
-            value={rowIntervalMs}
-            onChange={(e) => setRowIntervalMs(Number(e.target.value))}
-            style={{ width: '100%' }}
-          />
-        </Field>
-        <div style={{ color: '#999' }}>{cols} cột (van) × {rowCount} hàng</div>
-        <button onClick={clearGrid} style={secondaryBtnStyle}>🗑 Xoá hoạ tiết</button>
-      </Section>
-
-      <Section title="Gửi">
-        <button
-          onClick={sendPattern}
-          disabled={!connected || sending}
-          style={{ ...primaryBtnStyle, opacity: !connected || sending ? 0.5 : 1, cursor: !connected || sending ? 'not-allowed' : 'pointer' }}
+    <div style={panelStyle(isMobile, expanded)}>
+      {isMobile && (
+        <div
+          style={grabberWrapStyle}
+          onClick={toggleSheet}
+          role="button"
+          aria-label={expanded ? 'Thu gọn bảng điều khiển' : 'Mở bảng điều khiển'}
         >
-          {sending ? 'Đang gửi...' : '🌊 Gửi tới màn nước'}
-        </button>
-        <button
-          onClick={allOff}
-          disabled={!connected}
-          style={{ ...secondaryBtnStyle, opacity: !connected ? 0.5 : 1, cursor: !connected ? 'not-allowed' : 'pointer' }}
-        >Tắt hết van</button>
-        {sendError && <div style={{ color: '#E24B4A' }}>{sendError}</div>}
-        {lastSentAt && !sendError && (
-          <div style={{ color: '#1D9E75' }}>Đã gửi lúc {new Date(lastSentAt).toLocaleTimeString()}</div>
-        )}
-        {isBridge && bridgeOnline && !deviceReady && (
-          <div style={{ color: '#EF9F27' }}>Bridge online nhưng chưa xác nhận nối được ESP32 — vẫn có thể thử gửi.</div>
-        )}
-      </Section>
+          <div style={grabberStyle} />
+        </div>
+      )}
+
+      {/* Thanh gọn trên mobile: đủ để gửi và thấy lỗi mà không che chỗ vẽ. */}
+      {isMobile && !expanded && (
+        <div style={collapsedBarStyle}>
+          <div style={collapsedStatusRowStyle}>
+            <div style={dotStyle(connected ? '#1D9E75' : '#999')} />
+            <span>{connected ? 'Sẵn sàng gửi' : 'Chưa kết nối'}</span>
+            <span style={{ marginLeft: 'auto', color: '#999', fontSize: 13 }}>
+              {cols} × {rowCount}
+            </span>
+            <button onClick={toggleSheet} style={backBtnStyle}>Cài đặt</button>
+          </div>
+          <div style={sendRowStyle}>
+            {sendBtn}
+            <button
+              onClick={clearGrid}
+              title="Xoá hoạ tiết"
+              style={{ ...secondaryBtnStyle(isMobile), flex: 'none', paddingInline: 18 }}
+            >🗑</button>
+          </div>
+          {sendError && <Note color="#E24B4A">{sendError}</Note>}
+        </div>
+      )}
+
+      {expanded && (
+        <div style={sheetBodyStyle(isMobile)}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+            <strong style={{ fontSize: isMobile ? 17 : 15 }}>🌊 Màn nước</strong>
+            <button onClick={onExit} title="Quay lại vẽ chung" style={backBtnStyle}>← Vẽ chung</button>
+          </div>
+
+          <Section title="Kết nối tới thiết bị">
+            <div style={{ display: 'flex', borderRadius: 10, overflow: 'hidden', border: '1.5px solid #ddd' }}>
+              <button onClick={() => setTransportMode('bridge')} style={modeTabStyle(isBridge, isMobile)}>
+                Qua server
+              </button>
+              <button onClick={() => setTransportMode('direct')} style={modeTabStyle(!isBridge, isMobile)}>
+                Trực tiếp (LAN)
+              </button>
+            </div>
+
+            {isBridge ? (
+              <>
+                {/* Đoạn giải thích dài chỉ giữ trên desktop — trên điện thoại nó
+                    đẩy hết phần điều khiển xuống dưới màn hình. */}
+                {!isMobile && (
+                  <p style={{ color: '#999', margin: 0 }}>
+                    Gửi qua server whiteboard tới bridge chạy trên máy cắm dây với
+                    thiết bị. Dùng được từ bất kỳ đâu, kể cả khi whiteboard chạy HTTPS.
+                  </p>
+                )}
+                <StatusLine color={bridgeOnline ? '#1D9E75' : '#999'}>
+                  {bridgeOnline ? 'Bridge đã kết nối server' : 'Chưa có bridge nào online'}
+                </StatusLine>
+                {bridgeOnline && (
+                  <StatusLine color={STATUS_COLOR[status] || '#999'}>
+                    Bridge → thiết bị: {STATUS_LABEL[status] || 'Không rõ'}
+                  </StatusLine>
+                )}
+                {!bridgeOnline && (
+                  <Note color="#EF9F27">Chưa chạy bridge trên máy có dây tới màn nước.</Note>
+                )}
+              </>
+            ) : (
+              <>
+                <div style={{ display: 'flex', gap: 6 }}>
+                  <input
+                    value={ip}
+                    onChange={(e) => setIp(e.target.value)}
+                    placeholder="IP bộ điều khiển (192.168.1.x)"
+                    disabled={status === SOCKET_STATUS.CONNECTED}
+                    style={{ ...inputStyle(isMobile), flex: 1, minWidth: 0 }}
+                  />
+                  <input
+                    type="number"
+                    value={wsPort}
+                    onChange={(e) => setWsPort(Number(e.target.value) || CFG.DEFAULT_WS_PORT)}
+                    disabled={status === SOCKET_STATUS.CONNECTED}
+                    style={{ ...inputStyle(isMobile), width: isMobile ? 88 : 64 }}
+                  />
+                </div>
+                <button
+                  onClick={handleConnectToggle}
+                  style={status === SOCKET_STATUS.CONNECTED ? dangerBtnStyle(isMobile) : primaryBtnStyle(isMobile)}
+                >
+                  {status === SOCKET_STATUS.CONNECTED
+                    ? 'Ngắt kết nối'
+                    : status === SOCKET_STATUS.CONNECTING ? 'Đang kết nối...' : 'Kết nối'}
+                </button>
+                <StatusLine color={STATUS_COLOR[status]}>{STATUS_LABEL[status]}</StatusLine>
+                <Note color="#EF9F27">
+                  Chỉ dùng được khi mở whiteboard qua http:// cùng LAN với thiết bị.
+                </Note>
+              </>
+            )}
+
+            {valveCount != null && (
+              <Note color="#666">Van: {valveCount} ({valveBytes} byte/frame)</Note>
+            )}
+            {error && <Note color="#E24B4A">{error}</Note>}
+          </Section>
+
+          <Section title="Hoạ tiết">
+            <Field label={`Số hàng: ${rowCount}`}>
+              <input
+                type="range"
+                min={CFG.MIN_ROW_COUNT}
+                max={CFG.MAX_ROW_COUNT}
+                value={rowCount}
+                onChange={(e) => setRowCount(Number(e.target.value))}
+                style={rangeStyle(isMobile)}
+              />
+            </Field>
+            <Field label={`Tốc độ rơi: ${rowIntervalMs} ms/hàng`}>
+              <input
+                type="range"
+                min={CFG.MIN_ROW_INTERVAL_MS}
+                max={CFG.MAX_ROW_INTERVAL_MS}
+                value={rowIntervalMs}
+                onChange={(e) => setRowIntervalMs(Number(e.target.value))}
+                style={rangeStyle(isMobile)}
+              />
+            </Field>
+            <Note color="#999">{cols} cột (van) × {rowCount} hàng</Note>
+            <button onClick={clearGrid} style={secondaryBtnStyle(isMobile)}>🗑 Xoá hoạ tiết</button>
+          </Section>
+
+          <Section title="Gửi" last>
+            <div style={sendRowStyle}>{sendBtn}</div>
+            <button
+              onClick={allOff}
+              disabled={!connected}
+              style={{
+                ...secondaryBtnStyle(isMobile),
+                opacity: connected ? 1 : 0.5,
+                cursor: connected ? 'pointer' : 'not-allowed',
+              }}
+            >Tắt hết van</button>
+            {sendError && <Note color="#E24B4A">{sendError}</Note>}
+            {lastSentAt && !sendError && (
+              <Note color="#1D9E75">Đã gửi lúc {new Date(lastSentAt).toLocaleTimeString()}</Note>
+            )}
+            {isBridge && bridgeOnline && !deviceReady && (
+              <Note color="#EF9F27">
+                Bridge online nhưng chưa xác nhận nối được ESP32 — vẫn có thể thử gửi.
+              </Note>
+            )}
+          </Section>
+        </div>
+      )}
     </div>
   )
 }
 
-function Section({ title, children }) {
+function Section({ title, children, last }) {
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 6, paddingBottom: 10, borderBottom: '1px solid rgba(0,0,0,0.06)' }}>
-      <div style={{ fontSize: 11, fontWeight: 700, color: '#999', textTransform: 'uppercase', letterSpacing: 0.4 }}>{title}</div>
+    <div style={{
+      display: 'flex', flexDirection: 'column', gap: 8, paddingBottom: 10,
+      borderBottom: last ? 'none' : '1px solid rgba(0,0,0,0.06)',
+    }}>
+      <div style={{
+        fontSize: 11, fontWeight: 700, color: '#999',
+        textTransform: 'uppercase', letterSpacing: 0.4,
+      }}>{title}</div>
       {children}
     </div>
   )
@@ -178,43 +248,15 @@ function Field({ label, children }) {
   )
 }
 
-function ModeTab({ active, onClick, children }) {
+function StatusLine({ color, children }) {
   return (
-    <button
-      onClick={onClick}
-      style={{
-        flex: 1, padding: '8px 6px', border: 'none', cursor: 'pointer',
-        background: active ? '#1a1a1a' : 'transparent',
-        color: active ? '#fff' : '#444',
-        fontSize: 12, fontWeight: 600,
-      }}
-    >{children}</button>
+    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+      <div style={dotStyle(color)} />
+      <span style={{ color: '#666' }}>{children}</span>
+    </div>
   )
 }
 
-const inputStyle = {
-  padding: '8px 10px', borderRadius: 8, border: '1.5px solid #ddd',
-  fontSize: 13, outline: 'none', boxSizing: 'border-box',
-}
-
-const primaryBtnStyle = {
-  padding: '10px', borderRadius: 8, border: 'none',
-  background: '#1a1a1a', color: '#fff', fontSize: 13, fontWeight: 600,
-  cursor: 'pointer',
-}
-
-const secondaryBtnStyle = {
-  padding: '8px', borderRadius: 8, border: '1.5px solid #ddd',
-  background: 'transparent', color: '#1a1a1a', fontSize: 13, fontWeight: 500,
-  cursor: 'pointer',
-}
-
-const dangerBtnStyle = {
-  ...primaryBtnStyle, background: 'rgba(226,75,74,0.1)', color: '#E24B4A',
-}
-
-const backBtnStyle = {
-  fontSize: 12, padding: '4px 10px', borderRadius: 6,
-  border: '1px solid rgba(0,0,0,0.12)', background: 'transparent',
-  cursor: 'pointer', color: '#378ADD',
+function Note({ color, children }) {
+  return <div style={{ color, lineHeight: 1.4 }}>{children}</div>
 }

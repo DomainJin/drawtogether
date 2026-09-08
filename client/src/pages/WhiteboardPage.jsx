@@ -8,7 +8,7 @@ import CursorOverlay from '../components/CursorOverlay.jsx'
 import UserList from '../components/UserList.jsx'
 import AnimateOverlay from '../components/AnimateOverlay.jsx'
 import { useWaterfallStore } from '../store/waterfallStore.js'
-import { WaterfallCanvas, WaterfallPanel } from '../components/Waterfall/index.js'
+import { WaterfallCanvas, WaterfallPanel, useIsMobile, SHEET_COLLAPSED_PX } from '../components/Waterfall/index.js'
 import { attachWaterfallBridgeListeners } from '../waterfall/bridgeTransport.js'
 
 const CANVAS_SIZE = 4000
@@ -19,6 +19,7 @@ export default function WhiteboardPage() {
   const { roomId } = useParams()
   const { token, room } = useStore()
   const { active: waterfallActive, setActive: setWaterfallActive } = useWaterfallStore()
+  const isMobile = useIsMobile()
   const [searchParams] = useSearchParams()
   const canvasRef = useRef(null)
   const stageRef = useRef(null)       // div bọc canvas, ta transform cái này
@@ -283,7 +284,12 @@ export default function WhiteboardPage() {
 
       {waterfallActive ? (
         <>
-            <div style={{ position: 'absolute', inset: 0, right: 312, touchAction: 'none' }}>
+            {/* Điện thoại: canvas chiếm trọn bề ngang, chỉ chừa chỗ cho sheet
+                thu gọn ở đáy. Desktop giữ nguyên cột panel 280px bên phải. */}
+            <div style={{
+              position: 'absolute', top: 0, left: 0, right: isMobile ? 0 : 312,
+              bottom: isMobile ? SHEET_COLLAPSED_PX : 0, touchAction: 'none',
+            }}>
               <WaterfallCanvas />
             </div>
           <WaterfallPanel onExit={() => setWaterfallActive(false)} />
@@ -375,10 +381,15 @@ export default function WhiteboardPage() {
         </>
       )}
 
-      {/* AnimateOverlay luôn hiển thị, không phụ thuộc uiVisible */}
-      <AnimateOverlay canvasRef={canvasRef} camRef={cam} containerRef={containerRef} />
-
-      <MiniMap camRef={cam} canvasSize={CANVAS_SIZE} containerRef={containerRef} zoom={zoom} />
+      {/* Công cụ của whiteboard — ẩn khi đang vẽ lưới van: chúng nằm đè lên
+          bottom sheet, và lớp chọn vùng của AnimateOverlay (inset 0, z-250)
+          còn nuốt luôn thao tác chạm lên lưới. Không phụ thuộc uiVisible. */}
+      {!waterfallActive && (
+        <>
+          <AnimateOverlay canvasRef={canvasRef} camRef={cam} containerRef={containerRef} />
+          <MiniMap camRef={cam} canvasSize={CANVAS_SIZE} containerRef={containerRef} zoom={zoom} />
+        </>
+      )}
     </div>
   )
 }
