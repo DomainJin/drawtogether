@@ -59,13 +59,17 @@ if (REDIS_URL) {
 // ── Auth middleware ───────────────────────────────────────────────────────────
 io.use(async (socket, next) => {
   const token = socket.handshake.auth.token
-  if (!token) return next(new Error('Authentication required'))
-  try {
-    socket.user = app.jwt.verify(token)
-    next()
-  } catch {
-    next(new Error('Invalid token'))
+  if (token) {
+    try {
+      socket.user = app.jwt.verify(token)
+      return next()
+    } catch {
+      return next(new Error('Invalid token'))
+    }
   }
+  // Allow unauthenticated connections — bridge registration and whiteboard
+  // auth are handled per-event inside the socket handlers.
+  next()
 })
 
 // ── Socket handlers ───────────────────────────────────────────────────────────
