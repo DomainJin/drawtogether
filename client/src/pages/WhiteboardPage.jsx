@@ -274,9 +274,9 @@ export default function WhiteboardPage() {
 
       {waterfallActive ? (
         <>
-          <div style={{ position: 'absolute', inset: 0, right: 312 }}>
-            <WaterfallCanvas />
-          </div>
+            <div style={{ position: 'absolute', inset: 0, right: 312, touchAction: 'none' }}>
+              <WaterfallCanvas />
+            </div>
           <WaterfallPanel onExit={() => setWaterfallActive(false)} />
         </>
       ) : (

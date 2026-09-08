@@ -87,6 +87,7 @@ export default function WaterfallCanvas() {
 
   const onPointerDown = useCallback((e) => {
     e.preventDefault()
+    e.target.setPointerCapture(e.pointerId)
     const { row, col } = cellFromEvent(e)
     if (row < 0 || row >= rowCount || col < 0 || col >= cols) return
     paintValueRef.current = grid[row]?.[col] ? 0 : 1
