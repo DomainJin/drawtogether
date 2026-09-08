@@ -146,6 +146,7 @@ export default function WhiteboardPage() {
       isPanning.current = true
       panStart.current = { mx: e.clientX, my: e.clientY, cx: cam.current.x, cy: cam.current.y }
       containerRef.current.style.cursor = 'grabbing'
+      e.target.setPointerCapture(e.pointerId)
     }
   }, [])
 
@@ -156,9 +157,10 @@ export default function WhiteboardPage() {
     applyTransform()
   }, [applyTransform])
 
-  const onMouseUp = useCallback(() => {
+  const onMouseUp = useCallback((e) => {
     isPanning.current = false
     containerRef.current.style.cursor = spaceDown.current ? 'grab' : ''
+    e.target.releasePointerCapture(e.pointerId)
   }, [])
 
   // ── Mobile: 1 ngón → canvas xử lý vẽ, 2 ngón → pinch zoom + pan ─────────

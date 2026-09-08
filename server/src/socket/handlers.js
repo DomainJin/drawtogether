@@ -17,7 +17,10 @@ export function setupSocketHandlers(io, redis) {
   io.on('connection', (socket) => {
     socket.setMaxListeners(0) // 0 = unlimited
 
-    // ── VIEWPORT SCROLL (top level — chỉ register 1 lần) ────────────────────
+    // Auth variables - declared early for closure capture
+    let userId, displayName, color
+
+    // ── VIEWPORT SCROLL ─────────────────────────────────────────────
     socket.on('viewport:scroll', (data) => {
       const roomId = socket.currentRoom
       if (!roomId) return
@@ -62,15 +65,8 @@ export function setupSocketHandlers(io, redis) {
       // Broadcast cho tất cả
       io.to(roomId).emit('sprite:clear')
     })
-    const user = socket.user
-    if (!user) {
-      console.log(`[WS] unauthenticated connection (likely bridge): ${socket.id}`)
-      return
-    }
-    const { userId, displayName, color } = user
-    console.log(`[WS] connected: ${displayName} (${socket.id})`)
 
-    // ── JOIN ROOM ─────────────────────────────────────────────────────────────
+    // ── JOIN ROOM ─────────────────────────────────────────────────────
     socket.on('room:join', async ({ roomId }, ack) => {
       try {
         // Tự động tạo room nếu chưa có (ai có link thì vào được)
@@ -121,7 +117,7 @@ export function setupSocketHandlers(io, redis) {
       }
     })
 
-    // ── DRAW STROKE ───────────────────────────────────────────────────────────
+    // ── DRAW STROKE ───────────────────────────────────────────────────
     // Nhận stroke hoàn chỉnh khi user nhấc bút
     socket.on('draw:stroke', async (stroke) => {
       const roomId = socket.currentRoom
@@ -144,7 +140,7 @@ export function setupSocketHandlers(io, redis) {
       saveStroke({ ...fullStroke, roomId }).catch(console.error)
     })
 
-    // ── DRAW PREVIEW ──────────────────────────────────────────────────────────
+    // ── DRAW PREVIEW ──────────────────────────────────────────────────
     // Gửi real-time trong khi đang vẽ (chưa hoàn thành nét)
     // Không lưu DB, chỉ broadcast để các user thấy preview
     socket.on('draw:preview', (data) => {
@@ -153,22 +149,15 @@ export function setupSocketHandlers(io, redis) {
       socket.to(roomId).emit('draw:preview', { ...data, userId, socketId: socket.id })
     })
 
-    // ── CURSOR MOVE ───────────────────────────────────────────────────────────
+    // ── CURSOR MOVE ───────────────────────────────────────────────────
     // Throttle ở client, server chỉ forward
     socket.on('cursor:move', (data) => {
       const roomId = socket.currentRoom
       if (!roomId) return
       socket.to(roomId).emit('cursor:move', { ...data, userId, displayName, color, socketId: socket.id })
-
-    // ── VIEWPORT SCROLL ─────────────────────────────────────────────────────
-    socket.on('viewport:scroll', (data) => {
-      const roomId = socket.currentRoom
-      if (!roomId) return
-      socket.to(roomId).emit('viewport:scroll', { ...data, socketId: socket.id })
-    })
     })
 
-    // ── UNDO ─────────────────────────────────────────────────────────────────
+    // ── UNDO ─────────────────────────────────────────────────────────
     socket.on('draw:undo', async () => {
       const roomId = socket.currentRoom
       if (!roomId) return
@@ -178,7 +167,7 @@ export function setupSocketHandlers(io, redis) {
       }
     })
 
-    // ── CLEAR BOARD ───────────────────────────────────────────────────────────
+    // ── CLEAR BOARD ───────────────────────────────────────────────────
     socket.on('board:clear', async () => {
       const roomId = socket.currentRoom
       if (!roomId) return
@@ -186,7 +175,7 @@ export function setupSocketHandlers(io, redis) {
       io.to(roomId).emit('board:clear', { by: displayName })
     })
 
-    // ── DISCONNECT ────────────────────────────────────────────────────────────
+    // ── DISCONNECT ────────────────────────────────────────────────────
     socket.on('disconnecting', () => {
       const roomId = socket.currentRoom
       if (roomId) {
@@ -199,5 +188,14 @@ export function setupSocketHandlers(io, redis) {
     socket.on('disconnect', () => {
       console.log(`[WS] disconnected: ${displayName}`)
     })
+
+    // Check authentication after all handlers are registered
+    const user = socket.user
+    if (!user) {
+      console.log(`[WS] unauthenticated connection (likely bridge): ${socket.id}`)
+      return
+    }
+    ({ userId, displayName, color } = user)
+    console.log(`[WS] connected: ${displayName} (${socket.id})`)
   })
 }

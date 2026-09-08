@@ -1,4 +1,4 @@
-import { useEffect, useRef, useCallback } from 'react'
+import { useEffect, useCallback } from 'react'
 import { io } from 'socket.io-client'
 import { useStore } from '../store/index.js'
 import { useWaterfallStore } from '../store/waterfallStore.js'
@@ -14,7 +14,6 @@ export function getSocket() {
 
 export function useSocket(roomId, canvasRef) {
   const { token, setRoom, setUsers, addUser, removeUser, setCursor, removeCursor, setConnected } = useStore()
-  const connectedRef = useRef(false)
 
   const drawRemoteStroke = useCallback((stroke) => {
     const canvas = canvasRef.current
@@ -29,8 +28,7 @@ export function useSocket(roomId, canvasRef) {
   }, [canvasRef])
 
   useEffect(() => {
-    if (!token || !roomId || connectedRef.current) return
-    connectedRef.current = true
+    if (!token || !roomId) return
 
     // Tạo socket với JWT token
     socketInstance = io(SERVER_URL, {
@@ -128,7 +126,6 @@ export function useSocket(roomId, canvasRef) {
     return () => {
       socketInstance?.disconnect()
       socketInstance = null
-      connectedRef.current = false
       setConnected(false)
     }
   }, [token, roomId]) // eslint-disable-line

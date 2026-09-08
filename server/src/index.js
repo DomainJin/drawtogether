@@ -73,8 +73,9 @@ io.use(async (socket, next) => {
 })
 
 // ── Socket handlers ───────────────────────────────────────────────────────────
-setupSocketHandlers(io, redisClient)
+// Waterfall handlers registered first so bridge can authenticate before auth check
 setupWaterfallHandlers(io)
+setupSocketHandlers(io, redisClient)
 
 // ── HTTP Routes ───────────────────────────────────────────────────────────────
 app.get('/health', async () => ({ status: 'ok', ts: Date.now() }))
