@@ -39,8 +39,12 @@ export const WATERFALL_CONFIG = {
    *  trục thời gian. Chỉ nở theo trục HÀNG; trục cột (van) giữ chính xác.
    *
    *  CORNER_ROUND: độ bo góc theo cạnh ngắn. 0 = vuông, 0.5 = bo tròn hết cỡ. */
-  PREVIEW_ROW_OVERLAP: 1.7,
+  PREVIEW_ROW_OVERLAP: 1.15,
   PREVIEW_CORNER_ROUND: 0.5,
+  /** Hai dải ở hai hàng kề nhau cách nhau tối đa bấy nhiêu cột thì vẫn coi là
+   *  cùng một nét và được nối lại. 0 = phải chồng lấn mới nối. Để lớn quá thì
+   *  hai nét nằm cạnh nhau bị dính làm một. */
+  PREVIEW_CONNECT_GAP_CELLS: 1,
   /** Số frame tối đa nhét trong MỘT gói socket.io.
    *
    *  Mỗi Uint8Array là một "binary attachment", và socket.io-parser mặc định

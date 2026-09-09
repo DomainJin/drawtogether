@@ -3,23 +3,24 @@
  *  Ở lại thư mục component chứ không nằm trong waterfall/ vì phụ thuộc Canvas
  *  API — waterfall/ giữ thuần tuý (codec, grid, brush) để test được bằng số.
  *
- *  Cách làm: mỗi hàng gom các ô bật liên tiếp thành một DẢI, vẽ dải đó thành
- *  một thanh bo tròn, tất cả gộp vào MỘT path rồi fill một lần. Các thanh chồng
- *  lên nhau nên hợp lại thành khối liền, không có đường nối hay răng cưa.
- *
  *  Vì sao không vẽ đường bút riêng cho preview: như thế mắt nhìn một đằng, màn
- *  nước chạy một nẻo. Ở đây hình vẽ ra suy hoàn toàn từ `grid` — đúng dữ liệu
- *  sẽ được gửi đi.
+ *  nước chạy một nẻo. Mọi hình ở đây suy hoàn toàn từ `grid`.
  *
- *  Đánh đổi có chủ ý giữa hai trục:
- *   - Trục CỘT (van, có ý nghĩa vật lý): giữ chính xác. Bo góc chỉ ăn bớt vào
- *     trong, không bao giờ lấn ra cột chưa bật.
- *   - Trục HÀNG (thời gian): cho phép nở ra để các hàng chồng nhau, nhờ vậy nét
- *     xiên thành dải liền thay vì bậc thang.
+ *  Cách làm hai bước:
+ *   1. Mỗi hàng gom các ô bật liên tiếp thành một DẢI, vẽ thành thanh bo tròn.
+ *   2. NỐI dải ở hàng r với dải chồng lên nó ở hàng r+1 bằng một hình thang.
+ *
+ *  Bước 2 mới là chỗ quan trọng. Nét xiên trên lưới 160x64 dịch ngang vài cột
+ *  mỗi hàng, trong khi bản thân nét cũng chỉ rộng chừng ấy cột — hai dải liên
+ *  tiếp gần như chỉ chạm góc, vẽ riêng lẻ ra sẽ thành chuỗi hạt rời. Hình thang
+ *  nối tâm hàng này sang tâm hàng kia, cho ra dải liền mạch.
+ *
+ *  Đánh đổi có chủ ý: hình thang phủ thêm một ít diện tích ở khoảng giữa hai
+ *  hàng — đó là NỘI SUY theo trục thời gian, không phải bịa thêm van. Trục cột
+ *  (van, có ý nghĩa vật lý) vẫn nằm gọn giữa hai dải thật ở hai đầu.
  */
 
-/** Ô nhỏ hơn ngưỡng này thì đường kẻ lưới lấn hết ô, nhìn ra một mảng xám.
- *  Màn 4 m có 160 cột nên trên điện thoại luôn rơi vào trường hợp này. */
+/** Ô nhỏ hơn ngưỡng này thì đường kẻ lưới lấn hết ô, nhìn ra một mảng xám. */
 const MIN_CELL_PX_FOR_GRID_LINES = 14
 
 /** roundRect chỉ có từ Safari 16 — tự vẽ để máy cũ không mất luôn hoạ tiết. */
@@ -37,12 +38,26 @@ function addRoundedRect(ctx, x, y, w, h, r) {
   ctx.closePath()
 }
 
+/** Các dải ô bật liên tiếp trong một hàng, dạng [colStart, colEndInclusive]. */
+function rowRuns(row, cols) {
+  const runs = []
+  let start = -1
+  for (let c = 0; c <= cols; c++) {
+    const on = c < cols && row[c]
+    if (on && start < 0) start = c
+    if (on || start < 0) continue
+    runs.push([start, c - 1])
+    start = -1
+  }
+  return runs
+}
+
 export function createGridRenderer() {
   return function render(ctx, opts) {
     const {
       grid, cols, rowCount, width, height,
       onColor, offColor, gridLineColor,
-      rowOverlap, cornerRound,
+      rowOverlap, cornerRound, connectGapCells,
     } = opts
 
     ctx.clearRect(0, 0, width, height)
@@ -51,35 +66,48 @@ export function createGridRenderer() {
 
     const cellW = width / cols
     const cellH = height / rowCount
-
-    // Chiều cao thanh lớn hơn một hàng để hàng kề nhau chồng lên, xoá chỗ khuyết
-    // ở mối nối. Vẽ quanh tâm hàng nên phần nở chia đều lên và xuống.
     const barH = cellH * rowOverlap
     const halfExtra = (barH - cellH) / 2
 
     ctx.fillStyle = onColor
     ctx.beginPath()
 
+    let prevRuns = null
+    let prevRow = -1
+
     for (let r = 0; r < rowCount; r++) {
       const row = grid[r]
-      if (!row) continue
+      const runs = row ? rowRuns(row, cols) : []
 
-      let runStart = -1
-      for (let c = 0; c <= cols; c++) {
-        const on = c < cols && row[c]
-        if (on && runStart < 0) runStart = c
-        if (on || runStart < 0) continue
-
-        // Kết thúc một dải: [runStart, c-1]
-        const x = runStart * cellW
-        const w = (c - runStart) * cellW
-        const y = r * cellH - halfExtra
-        addRoundedRect(ctx, x, y, w, barH, Math.min(w, barH) * cornerRound)
-        runStart = -1
+      for (const [c0, c1] of runs) {
+        const x = c0 * cellW
+        const w = (c1 - c0 + 1) * cellW
+        addRoundedRect(ctx, x, r * cellH - halfExtra, w, barH, Math.min(w, barH) * cornerRound)
       }
+
+      // Nối với hàng ngay trên. Bỏ qua nếu hàng trên rỗng — không bắc cầu qua
+      // khoảng trống, nếu không hai nét rời nhau sẽ bị dính làm một.
+      if (prevRuns && prevRow === r - 1) {
+        const yTop = (prevRow + 0.5) * cellH
+        const yBot = (r + 0.5) * cellH
+        for (const [a0, a1] of prevRuns) {
+          for (const [b0, b1] of runs) {
+            // Chồng lấn hoặc cách nhau trong ngưỡng thì coi là cùng một nét.
+            if (b0 - a1 > connectGapCells || a0 - b1 > connectGapCells) continue
+            ctx.moveTo(a0 * cellW, yTop)
+            ctx.lineTo((a1 + 1) * cellW, yTop)
+            ctx.lineTo((b1 + 1) * cellW, yBot)
+            ctx.lineTo(b0 * cellW, yBot)
+            ctx.closePath()
+          }
+        }
+      }
+
+      prevRuns = runs.length ? runs : null
+      prevRow = runs.length ? r : -1
     }
 
-    // Fill một lần cho toàn bộ path: các thanh chồng nhau hợp thành khối liền,
+    // Fill một lần cho toàn bộ path: thanh và hình thang hợp thành khối liền,
     // không lộ mép do vẽ đè từng hình.
     ctx.fill()
 

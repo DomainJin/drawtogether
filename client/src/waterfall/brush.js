@@ -43,19 +43,36 @@ function stampEllipse(row, col, radRows, radCols, out, seen) {
 export function strokeCells(from, to, radRows, radCols) {
   const dRow = to.row - from.row
   const dCol = to.col - from.col
-  const steps = Math.max(Math.abs(dRow), Math.abs(dCol), 0)
+
+  // Tổng (Manhattan) chứ không phải max (Chebyshev). Lấy max thì mỗi bước có
+  // thể nhảy chéo cùng lúc cả hàng lẫn cột, hai ô liên tiếp chỉ chạm nhau ở
+  // GÓC — vẽ ra chuỗi hạt rời chứ không thành nét. Lấy tổng thì mỗi bước chỉ
+  // đi một trục, nét luôn liền cạnh (4-connected). Ô trùng đã có `seen` lọc
+  // nên số ô sinh ra gần như không đổi.
+  const steps = Math.abs(dRow) + Math.abs(dCol)
   const count = Math.max(1, Math.ceil(steps))
 
   const out = []
   const seen = new Set()
 
+  let prevRow = null
+  let prevCol = null
+
   for (let i = 0; i <= count; i++) {
     const t = i / count
-    stampEllipse(
-      Math.round(from.row + dRow * t),
-      Math.round(from.col + dCol * t),
-      radRows, radCols, out, seen,
-    )
+    const row = Math.round(from.row + dRow * t)
+    const col = Math.round(from.col + dCol * t)
+
+    // Chia nhỏ bước vẫn chưa đủ: có bước cả hai trục cùng làm tròn lên, ô mới
+    // và ô cũ chỉ chạm nhau ở góc. Chèn một ô trung gian bẻ bước chéo đó thành
+    // hai bước thẳng, nét mới liền cạnh thật sự.
+    if (prevRow !== null && row !== prevRow && col !== prevCol) {
+      stampEllipse(prevRow, col, radRows, radCols, out, seen)
+    }
+
+    stampEllipse(row, col, radRows, radCols, out, seen)
+    prevRow = row
+    prevCol = col
   }
   return out
 }

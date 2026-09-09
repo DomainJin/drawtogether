@@ -36,6 +36,7 @@ export default function WaterfallCanvas() {
       gridLineColor: GRID_LINE,
       rowOverlap: CFG.PREVIEW_ROW_OVERLAP,
       cornerRound: CFG.PREVIEW_CORNER_ROUND,
+      connectGapCells: CFG.PREVIEW_CONNECT_GAP_CELLS,
     })
   }, [grid, cols, rowCount])
 
