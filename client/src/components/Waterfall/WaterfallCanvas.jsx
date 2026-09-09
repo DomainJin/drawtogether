@@ -2,7 +2,7 @@ import { useEffect, useRef, useCallback } from 'react'
 import { useWaterfallStore } from '../../store/waterfallStore.js'
 import { WATERFALL_CONFIG as CFG } from '../../waterfall/config.js'
 import { brushRadii, pointCells, strokeCells } from '../../waterfall/brush.js'
-import { fitBox, patternAspect } from '../../waterfall/geometry.js'
+import { canvasSizeForWidth, patternAspect, renderScale } from '../../waterfall/geometry.js'
 import { createGridRenderer } from './gridRenderer.js'
 import { createStrokeRenderer } from './strokeRenderer.js'
 
@@ -21,20 +21,23 @@ const PAGE_COLOR = '#f2f2f0'
  * Tách ra vì ô lưới không vuông: vẽ thẳng từ lưới thì nét ngang dày hơn nét
  * dọc tới 3,5 lần. Thứ gửi đi vẫn chỉ là `grid` — nút "Lưới" cho đối chiếu.
  *
- * Khung vẽ lấy đúng tỉ lệ hoạ tiết sẽ có ngoài đời (xem geometry.js) thay vì
- * kéo giãn cho đầy màn hình, nhờ vậy nét tròn trên màn hình mới tròn trên màn
- * nước. Đổi tốc độ rơi là đổi khoảng cách hàng thật, nên khung đổi theo.
+ * Canvas vừa BỀ NGANG và giữ đúng tỉ lệ hoạ tiết ngoài đời (xem geometry.js),
+ * nên thường cao hơn màn hình và phải cuộn. Một ngón để vẽ, HAI ngón để cuộn —
+ * canvas phải nuốt cử chỉ chạm thì nét mới không bị đứt giữa chừng.
  */
 export default function WaterfallCanvas() {
   const canvasRef = useRef(null)
-  const containerRef = useRef(null)
+  const scrollRef = useRef(null)
   /** Chỉ số nét đang vẽ, null khi đã nhấc tay. */
   const activeIndexRef = useRef(null)
   /** Điểm cuối theo toạ độ ô, để nội suy phần cập nhật lưới. */
   const lastCellPointRef = useRef(null)
+  /** Các ngón đang chạm — quyết định vẽ hay cuộn. */
+  const pointersRef = useRef(new Map())
+  const panLastYRef = useRef(null)
   const gridRendererRef = useRef(null)
   const strokeRendererRef = useRef(null)
-  /** Kích thước logic (CSS px) — canvas.width đã nhân devicePixelRatio. */
+  /** Kích thước logic (CSS px). */
   const sizeRef = useRef({ width: 0, height: 0 })
   const aspectRef = useRef(1)
   const resizeRef = useRef(null)
@@ -82,31 +85,29 @@ export default function WaterfallCanvas() {
 
   useEffect(() => {
     const canvas = canvasRef.current
-    const container = containerRef.current
-    if (!canvas || !container) return
+    const scroller = scrollRef.current
+    if (!canvas || !scroller) return
 
     const resize = () => {
-      const box = container.getBoundingClientRect()
-      const fit = fitBox(box.width, box.height, aspectRef.current)
-      canvas.style.width = `${fit.width}px`
-      canvas.style.height = `${fit.height}px`
-      canvas.style.left = `${fit.left}px`
-      canvas.style.top = `${fit.top}px`
+      const { width, height } = canvasSizeForWidth(scroller.clientWidth, aspectRef.current)
+      if (!width || !height) return
+      canvas.style.width = `${width}px`
+      canvas.style.height = `${height}px`
 
-      // Vẽ theo mật độ điểm thật của màn hình, nếu không nét bị nhoè thêm một
-      // lần nữa trên máy retina.
-      const dpr = window.devicePixelRatio || 1
-      canvas.width = Math.round(fit.width * dpr)
-      canvas.height = Math.round(fit.height * dpr)
-      canvas.getContext('2d').setTransform(dpr, 0, 0, dpr, 0, 0)
-      sizeRef.current = { width: fit.width, height: fit.height }
+      // Vẽ theo mật độ điểm thật của màn hình, nhưng hạ xuống nếu canvas quá
+      // lớn — vượt giới hạn trình duyệt là mất trắng cả bản vẽ.
+      const scale = renderScale(width, height, window.devicePixelRatio || 1)
+      canvas.width = Math.round(width * scale)
+      canvas.height = Math.round(height * scale)
+      canvas.getContext('2d').setTransform(scale, 0, 0, scale, 0, 0)
+      sizeRef.current = { width, height }
       draw()
     }
 
     resizeRef.current = resize
     resize()
     const ro = new ResizeObserver(resize)
-    ro.observe(container)
+    ro.observe(scroller)
     return () => ro.disconnect()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
@@ -133,9 +134,29 @@ export default function WaterfallCanvas() {
     }
   }, [cols, rowCount])
 
+  const endStroke = useCallback(() => {
+    activeIndexRef.current = null
+    lastCellPointRef.current = null
+  }, [])
+
+  /** Trung điểm các ngón đang chạm, theo trục dọc. */
+  const midY = () => {
+    const ys = [...pointersRef.current.values()].map((p) => p.y)
+    return ys.reduce((a, b) => a + b, 0) / ys.length
+  }
+
   const onPointerDown = useCallback((e) => {
     e.preventDefault()
     e.target.setPointerCapture(e.pointerId)
+    pointersRef.current.set(e.pointerId, { y: e.clientY })
+
+    if (pointersRef.current.size > 1) {
+      // Ngón thứ hai đặt xuống là chuyển sang cuộn. Nét đang vẽ dừng tại đây,
+      // phần đã vẽ giữ nguyên — không lặng lẽ xoá thứ người dùng vừa vạch ra.
+      endStroke()
+      panLastYRef.current = midY()
+      return
+    }
 
     const p = pointFromEvent(e)
     const { radRows, radCols } = brushRadii(brushPx, p.cellW, p.cellH)
@@ -145,11 +166,23 @@ export default function WaterfallCanvas() {
     lastCellPointRef.current = p.cell
     // Bút luôn tô 1, tẩy luôn tô 0 — đồ lại lên vùng đã vẽ thì dày thêm, không xoá.
     paintCells(pointCells(p.cell, radRows, radCols), brushTool === 'eraser' ? 0 : 1)
-  }, [pointFromEvent, brushPx, brushTool, paintCells, beginStroke])
+  }, [pointFromEvent, brushPx, brushTool, paintCells, beginStroke, endStroke])
 
   const onPointerMove = useCallback((e) => {
-    if (activeIndexRef.current === null) return
+    if (!pointersRef.current.has(e.pointerId)) return
     e.preventDefault()
+    pointersRef.current.set(e.pointerId, { y: e.clientY })
+
+    if (pointersRef.current.size > 1) {
+      const y = midY()
+      if (panLastYRef.current !== null && scrollRef.current) {
+        scrollRef.current.scrollTop -= y - panLastYRef.current
+      }
+      panLastYRef.current = y
+      return
+    }
+
+    if (activeIndexRef.current === null) return
 
     const p = pointFromEvent(e)
     const from = lastCellPointRef.current || p.cell
@@ -160,28 +193,35 @@ export default function WaterfallCanvas() {
     lastCellPointRef.current = p.cell
   }, [pointFromEvent, brushPx, brushTool, paintCells, extendStroke])
 
-  const stopPainting = useCallback(() => {
-    activeIndexRef.current = null
-    lastCellPointRef.current = null
-  }, [])
+  const onPointerEnd = useCallback((e) => {
+    pointersRef.current.delete(e.pointerId)
+    if (pointersRef.current.size < 2) panLastYRef.current = null
+    // Nhấc bớt còn một ngón thì KHÔNG vẽ tiếp: ngón còn lại đang ở giữa cử chỉ
+    // cuộn, vẽ tiếp sẽ để lại một vạch không ai muốn.
+    if (pointersRef.current.size === 0) endStroke()
+  }, [endStroke])
 
   return (
     <div
-      ref={containerRef}
-      style={{ position: 'relative', width: '100%', height: '100%', background: PAGE_COLOR }}
+      ref={scrollRef}
+      style={{
+        width: '100%', height: '100%',
+        overflowY: 'auto', overflowX: 'hidden',
+        background: PAGE_COLOR,
+      }}
     >
       <canvas
         ref={canvasRef}
         style={{
-          display: 'block', position: 'absolute',
-          cursor: 'crosshair', touchAction: 'none',
-          boxShadow: '0 1px 8px rgba(0,0,0,0.10)',
+          display: 'block', cursor: 'crosshair',
+          // Nuốt cử chỉ chạm để trình duyệt không tự cuộn giữa lúc đang vẽ;
+          // phần cuộn hai ngón do onPointerMove lo.
+          touchAction: 'none',
         }}
         onPointerDown={onPointerDown}
         onPointerMove={onPointerMove}
-        onPointerUp={stopPainting}
-        onPointerCancel={stopPainting}
-        onPointerLeave={stopPainting}
+        onPointerUp={onPointerEnd}
+        onPointerCancel={onPointerEnd}
       />
     </div>
   )

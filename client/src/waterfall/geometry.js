@@ -43,20 +43,36 @@ export function patternAspect({ cols, rowCount, rowIntervalMs, valvesPerMeter, c
   return heightMm > 0 ? widthMm / heightMm : 1
 }
 
-/** Hộp lớn nhất có tỉ lệ `aspect` nhét vừa vùng `boxW x boxH`, canh giữa. */
-export function fitBox(boxW, boxH, aspect) {
-  if (boxW <= 0 || boxH <= 0 || !Number.isFinite(aspect) || aspect <= 0) {
-    return { width: boxW, height: boxH, left: 0, top: 0 }
-  }
-  let width = boxW
-  let height = width / aspect
-  if (height > boxH) {
-    height = boxH
-    width = height * aspect
-  }
-  return {
-    width, height,
-    left: (boxW - width) / 2,
-    top: (boxH - height) / 2,
-  }
+/** Kích thước canvas khi cho vừa BỀ NGANG vùng vẽ và giữ nguyên tỉ lệ.
+ *
+ *  Không lồng vừa cả chiều cao: hoạ tiết 64 hàng ở nhịp 80ms có tỉ lệ 1:4.57,
+ *  ép vừa chiều cao màn hình dọc thì còn một dải hẹp không vẽ nổi. Cho tràn
+ *  chiều cao rồi cuộn vẫn giữ đúng tỉ lệ mà vùng vẽ rộng gấp mấy lần.
+ */
+export function canvasSizeForWidth(boxWidth, aspect) {
+  const width = Math.max(0, boxWidth)
+  if (!Number.isFinite(aspect) || aspect <= 0) return { width, height: width }
+  return { width, height: width / aspect }
+}
+
+/** Giới hạn an toàn cho một canvas — vượt là trình duyệt trả về canvas trắng.
+ *  Safari trên iOS đời cũ chặn ở cạnh 4096px, và bộ nhớ mới là ràng buộc thật:
+ *  strokeRenderer giữ thêm 2 canvas đệm cùng cỡ. */
+const MAX_CANVAS_SIDE_PX = 4096
+const MAX_CANVAS_AREA_PX = 4e6
+
+/** Hệ số nhân mật độ điểm, đã hạ xuống nếu canvas quá lớn.
+ *
+ *  Hoạ tiết càng cao (nhịp rơi càng chậm) canvas càng dài; nhân thẳng
+ *  devicePixelRatio trên máy retina là vượt giới hạn ngay.
+ *
+ *  Có thể trả về số NHỎ HƠN 1: ở nhịp rơi chậm nhất, hoạ tiết cao tới ~6800px
+ *  CSS, tự nó đã vượt cạnh 4096px rồi. Lúc đó buộc phải vẽ ở độ phân giải thấp
+ *  hơn kích thước hiển thị — nét hơi mềm, nhưng còn hơn mất trắng cả bản vẽ. */
+export function renderScale(cssWidth, cssHeight, dpr) {
+  const w = Math.max(1, cssWidth)
+  const h = Math.max(1, cssHeight)
+  const bySide = MAX_CANVAS_SIDE_PX / Math.max(w, h)
+  const byArea = Math.sqrt(MAX_CANVAS_AREA_PX / (w * h))
+  return Math.max(0.05, Math.min(dpr, bySide, byArea))
 }
