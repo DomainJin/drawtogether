@@ -16,7 +16,7 @@ export const WATERFALL_CONFIG = {
   CURTAIN_WIDTH_M,
   VALVES_PER_METER,
   DEFAULT_VALVE_COUNT: Math.round(CURTAIN_WIDTH_M * VALVES_PER_METER),
-  DEFAULT_ROW_COUNT: 24,
+  DEFAULT_ROW_COUNT: 64,
   MIN_ROW_COUNT: 2,
   MAX_ROW_COUNT: 64,
   DEFAULT_ROW_INTERVAL_MS: 80,
@@ -30,6 +30,13 @@ export const WATERFALL_CONFIG = {
    *  brush.js quy đổi ra bán kính số ô riêng cho từng trục. */
   BRUSH_SIZES_PX: [4, 10, 20, 34],
   DEFAULT_BRUSH_PX: 10,
+
+  /** Số lần vẽ chồng ảnh đã nội suy khi hiển thị preview.
+   *
+   *  Phóng 160x64 lên cỡ màn hình bằng nội suy song tuyến cho ra nét mềm nhưng
+   *  nhạt; vẽ chồng thêm vài lượt sẽ đẩy vùng phủ một phần về đậm, mép nét sắc
+   *  lại mà vẫn mịn. 1 = mờ, 4 = gần như sắc cạnh trở lại. */
+  PREVIEW_SMOOTH_PASSES: 3,
   /** Số frame tối đa nhét trong MỘT gói socket.io.
    *
    *  Mỗi Uint8Array là một "binary attachment", và socket.io-parser mặc định

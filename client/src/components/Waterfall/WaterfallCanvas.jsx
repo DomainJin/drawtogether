@@ -1,15 +1,12 @@
 import { useEffect, useRef, useCallback } from 'react'
 import { useWaterfallStore } from '../../store/waterfallStore.js'
+import { WATERFALL_CONFIG as CFG } from '../../waterfall/config.js'
 import { brushRadii, pointCells, strokeCells } from '../../waterfall/brush.js'
+import { createGridRenderer } from './gridRenderer.js'
 
-const ON_COLOR = '#378ADD'
-const OFF_COLOR = '#eef3f8'
+const ON_COLOR = '#1a1a1a'
+const OFF_COLOR = '#ffffff'
 const GRID_LINE = 'rgba(0,0,0,0.06)'
-
-/** Dưới ngưỡng này thì lưới dày tới mức đường kẻ lấn hết ô — vẽ xong chỉ thấy
- *  một mảng xám. Màn 4 m có 160 cột nên trên điện thoại luôn rơi vào trường
- *  hợp này. */
-const MIN_CELL_PX_FOR_GRID_LINES = 6
 
 export default function WaterfallCanvas() {
   const canvasRef = useRef(null)
@@ -17,63 +14,47 @@ export default function WaterfallCanvas() {
   const isPaintingRef = useRef(false)
   /** Điểm cuối của nét, toạ độ ô dạng số thực. Nội suy từ đây tới điểm mới. */
   const lastPointRef = useRef(null)
+  const renderRef = useRef(null)
+  /** Kích thước logic (CSS px) — canvas.width đã nhân devicePixelRatio nên
+   *  không dùng trực tiếp được. */
+  const sizeRef = useRef({ width: 0, height: 0 })
 
   const { grid, cols, rowCount, brushTool, brushPx, paintCells } = useWaterfallStore()
+
+  if (!renderRef.current) renderRef.current = createGridRenderer()
 
   const draw = useCallback(() => {
     const canvas = canvasRef.current
     if (!canvas) return
-    const ctx = canvas.getContext('2d')
-    const { width, height } = canvas
-    ctx.clearRect(0, 0, width, height)
+    const { width, height } = sizeRef.current
+    if (!width || !height) return
 
-    const cellW = width / cols
-    const cellH = height / rowCount
-
-    ctx.fillStyle = OFF_COLOR
-    ctx.fillRect(0, 0, width, height)
-
-    ctx.fillStyle = ON_COLOR
-    for (let r = 0; r < rowCount; r++) {
-      const row = grid[r]
-      if (!row) continue
-      for (let c = 0; c < cols; c++) {
-        if (!row[c]) continue
-        // Math.ceil để các ô kề nhau không hở sọc trắng khi cellW < 1px.
-        ctx.fillRect(c * cellW, r * cellH, Math.ceil(cellW), Math.ceil(cellH))
-      }
-    }
-
-    ctx.strokeStyle = GRID_LINE
-    ctx.lineWidth = 1
-    ctx.beginPath()
-    if (cellW >= MIN_CELL_PX_FOR_GRID_LINES) {
-      for (let c = 0; c <= cols; c++) {
-        const x = Math.round(c * cellW) + 0.5
-        ctx.moveTo(x, 0)
-        ctx.lineTo(x, height)
-      }
-    }
-    if (cellH >= MIN_CELL_PX_FOR_GRID_LINES) {
-      for (let r = 0; r <= rowCount; r++) {
-        const y = Math.round(r * cellH) + 0.5
-        ctx.moveTo(0, y)
-        ctx.lineTo(width, y)
-      }
-    }
-    ctx.stroke()
+    renderRef.current(canvas.getContext('2d'), {
+      grid, cols, rowCount, width, height,
+      onColor: ON_COLOR,
+      offColor: OFF_COLOR,
+      gridLineColor: GRID_LINE,
+      passes: CFG.PREVIEW_SMOOTH_PASSES,
+    })
   }, [grid, cols, rowCount])
 
   useEffect(() => {
     const canvas = canvasRef.current
     const container = containerRef.current
     if (!canvas || !container) return
+
     const resize = () => {
       const { width, height } = container.getBoundingClientRect()
-      canvas.width = width
-      canvas.height = height
+      // Vẽ theo mật độ điểm thật của màn hình, nếu không nét trên điện thoại
+      // retina bị nhoè thêm một lần nữa ngoài phần nội suy.
+      const dpr = window.devicePixelRatio || 1
+      canvas.width = Math.round(width * dpr)
+      canvas.height = Math.round(height * dpr)
+      canvas.getContext('2d').setTransform(dpr, 0, 0, dpr, 0, 0)
+      sizeRef.current = { width, height }
       draw()
     }
+
     resize()
     const ro = new ResizeObserver(resize)
     ro.observe(container)
