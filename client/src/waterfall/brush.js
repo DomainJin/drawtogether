@@ -7,72 +7,86 @@
  *  thấy, nên caller quy đổi bán kính pixel ra số ô riêng cho mỗi trục.
  */
 
-/** Các ô nằm trong hình ellipse tâm (row, col). Ghi thẳng vào `out`/`seen` để
- *  một nét dài không phải cấp phát mảng trung gian cho từng điểm. */
-function stampEllipse(row, col, radRows, radCols, out, seen) {
-  const spanR = Math.floor(radRows)
-  const spanC = Math.floor(radCols)
+/** Bút mảnh hơn nửa ô vẫn phải tô được đúng ô nó đi qua, nếu không nét đứt
+ *  quãng tuỳ vị trí lẻ của con trỏ. */
+const MIN_RADIUS_CELLS = 0.5
 
-  // Bán kính dưới 1 ô: chỉ tô đúng ô dưới con trỏ, không nở ra hàng xóm.
-  const rr = Math.max(radRows, 0.5)
-  const cc = Math.max(radCols, 0.5)
-
-  for (let dr = -spanR; dr <= spanR; dr++) {
-    for (let dc = -spanC; dc <= spanC; dc++) {
-      if ((dr * dr) / (rr * rr) + (dc * dc) / (cc * cc) > 1) continue
-      const r = row + dr
-      const c = col + dc
-      const key = r * 100000 + c
-      if (seen.has(key)) continue
-      seen.add(key)
-      out.push({ row: r, col: c })
-    }
-  }
-}
+/** Bước lấy mẫu dọc nét, đo trong không gian đã chuẩn hoá theo bán kính (bút
+ *  thành hình tròn đơn vị). 0.25 nghĩa là hai vị trí bút liên tiếp chồng nhau
+ *  rất nhiều — đủ để biên nét không gợn. */
+const SAMPLE_STEP = 0.25
+const MAX_SAMPLES = 4096
 
 /** Mọi ô mà nét bút quét qua khi đi từ `from` tới `to`.
  *
- *  Nội suy giữa hai điểm là phần bắt buộc: pointermove chỉ lấy mẫu rời rạc,
- *  mà một cột trên điện thoại chỉ rộng ~2,4px — kéo tay nhanh là nhảy qua hàng
- *  chục ô, nét vẽ ra đứt quãng. Số bước lấy theo trục lệch nhiều hơn để không
- *  bỏ sót ô nào.
+ *  KHÔNG đóng dấu hình bút ở từng bước rồi hợp lại. Làm thế thì số ô mỗi hàng
+ *  nhận được thay đổi theo vị trí lẻ của con trỏ và theo phép làm tròn — nét ra
+ *  chỗ mỏng chỗ dày, biên gợn sóng.
  *
- *  Toạ độ nhận dạng số thực (vị trí ô có phần lẻ) để nét không bị giật theo
- *  lưới; chỉ làm tròn ở từng bước.
+ *  Thay vào đó, với MỖI HÀNG tính khoảng cột [min, max] mà bút thực sự phủ tới
+ *  trên suốt đường đi, rồi tô liền một dải. Mỗi hàng vì thế được đúng một dải
+ *  liên tục, bề rộng biến thiên trơn theo hình học. Hai hàng kề nhau cũng luôn
+ *  gối nhau vì hình quét là một khối lồi — nét liền cạnh, không chạm góc.
+ *
+ *  Toạ độ nhận dạng số thực để nét không giật theo lưới.
  */
 export function strokeCells(from, to, radRows, radCols) {
+  const rr = Math.max(radRows, MIN_RADIUS_CELLS)
+  const cc = Math.max(radCols, MIN_RADIUS_CELLS)
+
   const dRow = to.row - from.row
   const dCol = to.col - from.col
 
-  // Tổng (Manhattan) chứ không phải max (Chebyshev). Lấy max thì mỗi bước có
-  // thể nhảy chéo cùng lúc cả hàng lẫn cột, hai ô liên tiếp chỉ chạm nhau ở
-  // GÓC — vẽ ra chuỗi hạt rời chứ không thành nét. Lấy tổng thì mỗi bước chỉ
-  // đi một trục, nét luôn liền cạnh (4-connected). Ô trùng đã có `seen` lọc
-  // nên số ô sinh ra gần như không đổi.
-  const steps = Math.abs(dRow) + Math.abs(dCol)
-  const count = Math.max(1, Math.ceil(steps))
+  // Chiều dài nét đo trong không gian chuẩn hoá — bút to tự lấy ít mẫu, bút
+  // nhỏ lấy nhiều, không phải đoán theo pixel.
+  const length = Math.hypot(dRow / rr, dCol / cc)
+  const samples = Math.min(MAX_SAMPLES, Math.max(1, Math.ceil(length / SAMPLE_STEP)))
+
+  const loByRow = new Map()
+  const hiByRow = new Map()
+
+  for (let i = 0; i <= samples; i++) {
+    const t = i / samples
+    const pr = from.row + dRow * t
+    const pc = from.col + dCol * t
+
+    const rStart = Math.ceil(pr - rr)
+    const rEnd = Math.floor(pr + rr)
+    for (let row = rStart; row <= rEnd; row++) {
+      const d = (row - pr) / rr
+      const k = 1 - d * d
+      if (k < 0) continue
+      // Nửa bề rộng của hình bút tại đúng hàng này.
+      const half = cc * Math.sqrt(k)
+      const lo = pc - half
+      const hi = pc + half
+      const curLo = loByRow.get(row)
+      const curHi = hiByRow.get(row)
+      if (curLo === undefined || lo < curLo) loByRow.set(row, lo)
+      if (curHi === undefined || hi > curHi) hiByRow.set(row, hi)
+    }
+  }
+
+  // Quy về khoảng cột nguyên cho từng hàng.
+  const spans = [...loByRow.keys()]
+    .sort((a, b) => a - b)
+    .map((row) => ({ row, c0: Math.ceil(loByRow.get(row)), c1: Math.floor(hiByRow.get(row)) }))
+    .filter((s) => s.c1 >= s.c0)
+
+  // Chỗ bút cắt qua ranh giới hai hàng, bề rộng hình bút thu về gần 0, nên sau
+  // khi ceil/floor hai hàng có thể lệch nhau đúng một cột và chỉ còn chạm góc.
+  // Kéo giãn tối thiểu để hai hàng kề nhau luôn chung ít nhất một cột.
+  for (let i = 1; i < spans.length; i++) {
+    const prev = spans[i - 1]
+    const cur = spans[i]
+    if (cur.row !== prev.row + 1) continue
+    if (cur.c0 > prev.c1) prev.c1 = cur.c0
+    else if (prev.c0 > cur.c1) cur.c1 = prev.c0
+  }
 
   const out = []
-  const seen = new Set()
-
-  let prevRow = null
-  let prevCol = null
-
-  for (let i = 0; i <= count; i++) {
-    const t = i / count
-    const row = Math.round(from.row + dRow * t)
-    const col = Math.round(from.col + dCol * t)
-
-    // Chia nhỏ bước vẫn chưa đủ: có bước cả hai trục cùng làm tròn lên, ô mới
-    // và ô cũ chỉ chạm nhau ở góc. Chèn một ô trung gian bẻ bước chéo đó thành
-    // hai bước thẳng, nét mới liền cạnh thật sự.
-    if (prevRow !== null && row !== prevRow && col !== prevCol) {
-      stampEllipse(prevRow, col, radRows, radCols, out, seen)
-    }
-
-    stampEllipse(row, col, radRows, radCols, out, seen)
-    prevRow = row
-    prevCol = col
+  for (const { row, c0, c1 } of spans) {
+    for (let col = c0; col <= c1; col++) out.push({ row, col })
   }
   return out
 }

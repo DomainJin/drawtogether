@@ -16,7 +16,14 @@ const TOOLS = [
  * @param {boolean} panelOpen desktop: canvas bị panel chiếm bề ngang, dịch tâm
  */
 export default function WaterfallTools({ isMobile, panelOpen }) {
-  const { brushTool, setBrushTool, brushPx, setBrushPx } = useWaterfallStore()
+  const { brushTool, setBrushTool, brushPx, setBrushPx, clearGrid, grid } = useWaterfallStore()
+
+  const hasPattern = grid.some((row) => row.some((v) => v))
+
+  const handleClearAll = () => {
+    // Hỏi lại vì không có undo — mất hoạ tiết là vẽ lại từ đầu.
+    if (hasPattern && window.confirm('Xoá toàn bộ hoạ tiết?')) clearGrid()
+  }
 
   const reservedRight = !isMobile && panelOpen ? UI.PANEL_WIDTH_PX + UI.PANEL_GAP_PX : 0
 
@@ -73,6 +80,23 @@ export default function WaterfallTools({ isMobile, panelOpen }) {
           </button>
         ))}
       </div>
+
+      <div style={{ width: 1, height: 26, background: 'rgba(0,0,0,0.1)' }} />
+
+      {/* Xoá sạch một nhát, thay vì phải gôm từng chỗ bằng tẩy. */}
+      <button
+        title="Xoá toàn bộ hoạ tiết"
+        onClick={handleClearAll}
+        disabled={!hasPattern}
+        style={{
+          height: 40, padding: '0 12px', borderRadius: 10, border: 'none',
+          background: hasPattern ? 'rgba(226,75,74,0.1)' : 'transparent',
+          color: hasPattern ? '#E24B4A' : '#c4c4c4',
+          cursor: hasPattern ? 'pointer' : 'not-allowed',
+          fontSize: 15, fontWeight: 600,
+          display: 'flex', alignItems: 'center', gap: 6,
+        }}
+      >🗑 Xoá hết</button>
     </div>
   )
 }
