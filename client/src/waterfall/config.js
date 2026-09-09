@@ -19,9 +19,16 @@ export const WATERFALL_CONFIG = {
   CURTAIN_WIDTH_M,
   VALVES_PER_METER,
   DEFAULT_VALVE_COUNT: Math.round(CURTAIN_WIDTH_M * VALVES_PER_METER),
-  DEFAULT_ROW_COUNT: 64,
+  /** Số hàng = độ DÀI hoạ tiết, không phải độ mịn (độ mịn do nhịp rơi quyết
+   *  định). Cũng chính là chiều cao vùng vẽ: canvas khoá theo tỉ lệ thật, nên
+   *  muốn vẽ dài hơn thì thêm hàng chứ không kéo giãn canvas — kéo giãn là hoạ
+   *  tiết ra màn nước bị méo.
+   *
+   *  256 hàng ở nhịp 16ms = 4,1 giây, cao 28,8m nước rơi, vùng vẽ cao khoảng
+   *  2 màn hình điện thoại. Trần 512 hàng = 8,2 giây. */
+  DEFAULT_ROW_COUNT: 256,
   MIN_ROW_COUNT: 2,
-  MAX_ROW_COUNT: 64,
+  MAX_ROW_COUNT: 512,
   /** Nhịp thời gian giữa hai hàng — quyết định ĐỘ PHÂN GIẢI DỌC của hoạ tiết.
    *
    *  Van cách nhau cố định 25mm theo chiều ngang, còn khoảng cách dọc bằng
