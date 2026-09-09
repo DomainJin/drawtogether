@@ -19,7 +19,16 @@ export const WATERFALL_CONFIG = {
   DEFAULT_ROW_COUNT: 64,
   MIN_ROW_COUNT: 2,
   MAX_ROW_COUNT: 64,
-  DEFAULT_ROW_INTERVAL_MS: 80,
+  /** Nhịp thời gian giữa hai hàng — quyết định ĐỘ PHÂN GIẢI DỌC của hoạ tiết.
+   *
+   *  Van cách nhau cố định 25mm theo chiều ngang, còn khoảng cách dọc bằng
+   *  quãng nước rơi trong một nhịp. Ở 80ms mỗi hàng cách nhau 286mm — cao gấp
+   *  11,4 lần bề ngang, nên nét chéo hiện thành bậc thang rõ mồn một. Ở 16ms
+   *  còn 51mm, tức 2,1 lần: gần mượt.
+   *
+   *  16ms lấy theo DEFAULT_ROW_INTERVAL_MS của waterfall-sprite. Hạ nữa thì
+   *  càng vuông (10ms ~ 1,3 lần) nhưng phải xem ESP32/SPI có kịp không. */
+  DEFAULT_ROW_INTERVAL_MS: 16,
   MIN_ROW_INTERVAL_MS: 10,
   MAX_ROW_INTERVAL_MS: 300,
   MAX_VALVES: 512,
