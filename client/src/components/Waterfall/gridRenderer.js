@@ -1,84 +1,88 @@
-/** Vẽ lưới van ra canvas cho mượt mắt.
+/** Vẽ lưới van thành nét liền, mượt như bút whiteboard.
  *
- *  Ở lại thư mục component chứ không nằm trong waterfall/ vì nó phụ thuộc
- *  Canvas API — waterfall/ giữ thuần tuý (codec, grid, brush) để test được.
+ *  Ở lại thư mục component chứ không nằm trong waterfall/ vì phụ thuộc Canvas
+ *  API — waterfall/ giữ thuần tuý (codec, grid, brush) để test được bằng số.
  *
- *  Cách làm: dựng một ảnh ĐÚNG kích thước lưới, mỗi ô một pixel, rồi phóng to
- *  bằng nội suy song tuyến của trình duyệt. Nét vì thế mềm và liền mạch thay vì
- *  bậc thang — nhưng vẫn là CHÍNH dữ liệu sẽ gửi đi, chỉ khác cách hiển thị.
- *  Không có đường vẽ riêng nào cho preview, nên preview luôn khớp thứ chạy trên
- *  màn nước.
+ *  Cách làm: mỗi hàng gom các ô bật liên tiếp thành một DẢI, vẽ dải đó thành
+ *  một thanh bo tròn, tất cả gộp vào MỘT path rồi fill một lần. Các thanh chồng
+ *  lên nhau nên hợp lại thành khối liền, không có đường nối hay răng cưa.
+ *
+ *  Vì sao không vẽ đường bút riêng cho preview: như thế mắt nhìn một đằng, màn
+ *  nước chạy một nẻo. Ở đây hình vẽ ra suy hoàn toàn từ `grid` — đúng dữ liệu
+ *  sẽ được gửi đi.
+ *
+ *  Đánh đổi có chủ ý giữa hai trục:
+ *   - Trục CỘT (van, có ý nghĩa vật lý): giữ chính xác. Bo góc chỉ ăn bớt vào
+ *     trong, không bao giờ lấn ra cột chưa bật.
+ *   - Trục HÀNG (thời gian): cho phép nở ra để các hàng chồng nhau, nhờ vậy nét
+ *     xiên thành dải liền thay vì bậc thang.
  */
 
-/** Dưới ngưỡng này thì đường kẻ lưới lấn hết ô, nhìn ra một mảng xám. Màn 4 m
- *  có 160 cột nên trên điện thoại luôn rơi vào trường hợp này. */
-const MIN_CELL_PX_FOR_GRID_LINES = 10
+/** Ô nhỏ hơn ngưỡng này thì đường kẻ lưới lấn hết ô, nhìn ra một mảng xám.
+ *  Màn 4 m có 160 cột nên trên điện thoại luôn rơi vào trường hợp này. */
+const MIN_CELL_PX_FOR_GRID_LINES = 14
 
-function parseRgb(hex) {
-  const n = parseInt(hex.slice(1), 16)
-  return [(n >> 16) & 255, (n >> 8) & 255, n & 255]
+/** roundRect chỉ có từ Safari 16 — tự vẽ để máy cũ không mất luôn hoạ tiết. */
+function addRoundedRect(ctx, x, y, w, h, r) {
+  const rad = Math.max(0, Math.min(r, w / 2, h / 2))
+  if (ctx.roundRect) {
+    ctx.roundRect(x, y, w, h, rad)
+    return
+  }
+  ctx.moveTo(x + rad, y)
+  ctx.arcTo(x + w, y, x + w, y + h, rad)
+  ctx.arcTo(x + w, y + h, x, y + h, rad)
+  ctx.arcTo(x, y + h, x, y, rad)
+  ctx.arcTo(x, y, x + w, y, rad)
+  ctx.closePath()
 }
 
-/** Giữ lại canvas/buffer giữa các lần vẽ — draw() chạy theo từng pointermove,
- *  cấp phát lại 160x64 mỗi lần là rác vô ích. */
 export function createGridRenderer() {
-  let cellCanvas = null
-  let cellCtx = null
-  let imageData = null
-
-  function ensureCellCanvas(cols, rowCount) {
-    if (cellCanvas && cellCanvas.width === cols && cellCanvas.height === rowCount) return
-    cellCanvas = document.createElement('canvas')
-    cellCanvas.width = cols
-    cellCanvas.height = rowCount
-    cellCtx = cellCanvas.getContext('2d')
-    imageData = cellCtx.createImageData(cols, rowCount)
-  }
-
   return function render(ctx, opts) {
     const {
       grid, cols, rowCount, width, height,
-      onColor, offColor, passes, gridLineColor,
+      onColor, offColor, gridLineColor,
+      rowOverlap, cornerRound,
     } = opts
 
     ctx.clearRect(0, 0, width, height)
     ctx.fillStyle = offColor
     ctx.fillRect(0, 0, width, height)
 
-    ensureCellCanvas(cols, rowCount)
+    const cellW = width / cols
+    const cellH = height / rowCount
 
-    const [r0, g0, b0] = parseRgb(onColor)
-    const data = imageData.data
-    data.fill(0) // ô tắt để trong suốt, nền do lớp dưới lo
+    // Chiều cao thanh lớn hơn một hàng để hàng kề nhau chồng lên, xoá chỗ khuyết
+    // ở mối nối. Vẽ quanh tâm hàng nên phần nở chia đều lên và xuống.
+    const barH = cellH * rowOverlap
+    const halfExtra = (barH - cellH) / 2
 
-    let anyOn = false
+    ctx.fillStyle = onColor
+    ctx.beginPath()
+
     for (let r = 0; r < rowCount; r++) {
       const row = grid[r]
       if (!row) continue
-      const base = r * cols * 4
-      for (let c = 0; c < cols; c++) {
-        if (!row[c]) continue
-        const i = base + c * 4
-        data[i] = r0
-        data[i + 1] = g0
-        data[i + 2] = b0
-        data[i + 3] = 255
-        anyOn = true
+
+      let runStart = -1
+      for (let c = 0; c <= cols; c++) {
+        const on = c < cols && row[c]
+        if (on && runStart < 0) runStart = c
+        if (on || runStart < 0) continue
+
+        // Kết thúc một dải: [runStart, c-1]
+        const x = runStart * cellW
+        const w = (c - runStart) * cellW
+        const y = r * cellH - halfExtra
+        addRoundedRect(ctx, x, y, w, barH, Math.min(w, barH) * cornerRound)
+        runStart = -1
       }
     }
 
-    if (anyOn) {
-      cellCtx.putImageData(imageData, 0, 0)
-      ctx.imageSmoothingEnabled = true
-      ctx.imageSmoothingQuality = 'high'
-      // Vẽ chồng nhiều lượt: vùng phủ một phần đậm dần lên, mép nét sắc lại
-      // mà không mất độ mịn của nội suy.
-      for (let i = 0; i < passes; i++) ctx.drawImage(cellCanvas, 0, 0, width, height)
-    }
+    // Fill một lần cho toàn bộ path: các thanh chồng nhau hợp thành khối liền,
+    // không lộ mép do vẽ đè từng hình.
+    ctx.fill()
 
-    // Kẻ lưới chỉ còn ý nghĩa khi ô đủ to để nhìn ra từng ô.
-    const cellW = width / cols
-    const cellH = height / rowCount
     if (cellW < MIN_CELL_PX_FOR_GRID_LINES && cellH < MIN_CELL_PX_FOR_GRID_LINES) return
 
     ctx.strokeStyle = gridLineColor

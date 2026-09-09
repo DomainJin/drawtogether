@@ -34,7 +34,8 @@ export default function WaterfallCanvas() {
       onColor: ON_COLOR,
       offColor: OFF_COLOR,
       gridLineColor: GRID_LINE,
-      passes: CFG.PREVIEW_SMOOTH_PASSES,
+      rowOverlap: CFG.PREVIEW_ROW_OVERLAP,
+      cornerRound: CFG.PREVIEW_CORNER_ROUND,
     })
   }, [grid, cols, rowCount])
 

@@ -31,12 +31,16 @@ export const WATERFALL_CONFIG = {
   BRUSH_SIZES_PX: [4, 10, 20, 34],
   DEFAULT_BRUSH_PX: 10,
 
-  /** Số lần vẽ chồng ảnh đã nội suy khi hiển thị preview.
+  /** Hiển thị preview — xem gridRenderer.js.
    *
-   *  Phóng 160x64 lên cỡ màn hình bằng nội suy song tuyến cho ra nét mềm nhưng
-   *  nhạt; vẽ chồng thêm vài lượt sẽ đẩy vùng phủ một phần về đậm, mép nét sắc
-   *  lại mà vẫn mịn. 1 = mờ, 4 = gần như sắc cạnh trở lại. */
-  PREVIEW_SMOOTH_PASSES: 3,
+   *  ROW_OVERLAP: chiều cao thanh vẽ tính theo bội số của một hàng. >1 để các
+   *  hàng chồng lên nhau, nét xiên thành dải liền thay vì bậc thang. 1.0 = sát
+   *  nhau (còn thấy khuyết ở mối nối), 2.0 = rất mượt nhưng nét dày lên theo
+   *  trục thời gian. Chỉ nở theo trục HÀNG; trục cột (van) giữ chính xác.
+   *
+   *  CORNER_ROUND: độ bo góc theo cạnh ngắn. 0 = vuông, 0.5 = bo tròn hết cỡ. */
+  PREVIEW_ROW_OVERLAP: 1.7,
+  PREVIEW_CORNER_ROUND: 0.5,
   /** Số frame tối đa nhét trong MỘT gói socket.io.
    *
    *  Mỗi Uint8Array là một "binary attachment", và socket.io-parser mặc định
