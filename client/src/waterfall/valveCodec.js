@@ -73,8 +73,14 @@ export function buildAnimationFrames(rows, rowIntervalMs, valveCount) {
   return frames
 }
 
-export function gridToOpenValveRows(grid) {
-  return grid.map((row) => {
+/** Lưới canvas -> danh sách van mở theo THỨ TỰ GỬI.
+ *
+ *  `bottomFirst` đảo trục dọc: xem EMIT_BOTTOM_ROW_FIRST trong config.js. Trục
+ *  cột không đụng tới — van nào là van nấy.
+ */
+export function gridToOpenValveRows(grid, bottomFirst = false) {
+  const ordered = bottomFirst ? [...grid].reverse() : grid
+  return ordered.map((row) => {
     const open = []
     for (let c = 0; c < row.length; c++) {
       if (row[c]) open.push(c)

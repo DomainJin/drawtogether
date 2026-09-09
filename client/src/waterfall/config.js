@@ -32,6 +32,17 @@ export const WATERFALL_CONFIG = {
   CURTAIN_HEIGHT_M: 2.0,
   GRAVITY_M_S2: 9.81,
 
+  /** Gửi hàng DƯỚI CÙNG của canvas trước.
+   *
+   *  Màn nước là máy in dòng dựng đứng: hàng gửi trước rơi xa nhất nên nằm dưới
+   *  cùng, hàng gửi sau cùng đang ở ngay dưới vòi ("newest at top, oldest near
+   *  the bottom" — waterfall-sprite/core/physical/types.ts). Canvas thì hàng 0
+   *  ở trên. Gửi xuôi từ hàng 0 là hoạ tiết lộn ngược theo chiều dọc.
+   *
+   *  Để thành cờ chứ không nhét cứng: nếu firmware của bạn đã tự đảo rồi thì
+   *  chỉ cần đặt false, không phải sửa code. */
+  EMIT_BOTTOM_ROW_FIRST: true,
+
   /** Bề dày nét vẽ — đường kính tính bằng pixel trên màn, giống dải width của
    *  Toolbar whiteboard. Để theo pixel chứ không theo số ô vì ô lưới rất hẹp
    *  và cao (160 cột × 24-64 hàng): nét phải tròn theo mắt nhìn thì mới dễ vẽ.

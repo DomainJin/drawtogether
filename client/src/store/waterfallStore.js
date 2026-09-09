@@ -225,7 +225,7 @@ export const useWaterfallStore = create((set, get) => ({
     const effectiveValveCount = valveCount ?? cols
     set({ sending: true, sendError: null })
     try {
-      const rows = gridToOpenValveRows(grid)
+      const rows = gridToOpenValveRows(grid, CFG.EMIT_BOTTOM_ROW_FIRST)
       const frames = buildAnimationFrames(rows, rowIntervalMs, effectiveValveCount)
 
       if (transportMode === 'bridge') {
