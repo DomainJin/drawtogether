@@ -19,12 +19,27 @@ export async function sendFramesViaBridge(frames) {
   const socket = getSocket()
   if (!socket?.connected) throw new Error('Chưa kết nối server')
 
+  // Bắn hết các gói RỒI mới chờ ack, không chờ từng gói một.
+  //
+  // Chờ tuần tự thì mỗi gói tốn một vòng lượt về server (~300ms đo trên
+  // Railway): 9 gói mất 2775ms trong khi cả hoạ tiết chỉ dài 1024ms. Firmware
+  // chạy hết 128ms dữ liệu trong gói đầu rồi đứng chờ gói sau — hoạ tiết ra
+  // thành từng cụm van bật giật cục. Bắn song song còn 316ms, tới trước khi
+  // firmware cần dùng.
+  //
+  // socket.io giữ nguyên thứ tự gói trên cùng một kết nối, nên frame vẫn tới
+  // đúng trình tự dù không chờ ack.
   const size = CFG.MAX_FRAMES_PER_PACKET
+  const pending = []
   for (let i = 0; i < frames.length; i += size) {
-    const chunk = frames.slice(i, i + size)
-    const ack = await socket.timeout(ACK_TIMEOUT_MS).emitWithAck('waterfall:frames', chunk)
-    if (!ack?.ok) throw new Error(ack?.error || 'Server từ chối gửi hoạ tiết')
+    pending.push(
+      socket.timeout(ACK_TIMEOUT_MS).emitWithAck('waterfall:frames', frames.slice(i, i + size)),
+    )
   }
+
+  const acks = await Promise.all(pending)
+  const rejected = acks.find((ack) => !ack?.ok)
+  if (rejected) throw new Error(rejected.error || 'Server từ chối gửi hoạ tiết')
 }
 
 export async function sendCmdViaBridge(cmd) {

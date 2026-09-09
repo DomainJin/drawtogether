@@ -1,4 +1,7 @@
-/** Màn nước thực tế: bề ngang 4 m, van cách nhau 25 mm → 40 van/m → 160 van.
+/** Màn nước thực tế: bề ngang 8 m, van cách nhau 50 mm → 20 van/m → 160 van.
+ *
+ *  Số lấy từ panel Physical config của Waterfall Designer (app đang chạy giàn
+ *  thật), khớp với VALVES_PER_METER = 20 trong waterfall-sprite/core/physical.
  *
  *  Suy DEFAULT_VALVE_COUNT ra từ hai số vật lý này thay vì gõ thẳng 160: đổi
  *  chiều dài màn chỉ phải sửa một chỗ. Trước đây mặc định là 80 (màn 2 m), nên
@@ -7,8 +10,8 @@
  *
  *  Đây chỉ là giá trị KHỞI ĐẦU. Khi bridge báo valve_count thật từ thiết bị,
  *  số đó thắng (applyBridgeStatus → resizeCols). */
-const CURTAIN_WIDTH_M = 4
-const VALVES_PER_METER = 40
+const CURTAIN_WIDTH_M = 8
+const VALVES_PER_METER = 20
 
 export const WATERFALL_CONFIG = {
   DEFAULT_WS_PORT: 3333,
@@ -36,9 +39,10 @@ export const WATERFALL_CONFIG = {
   /** Chiều cao màn nước (m) — quãng nước rơi từ vòi tới đáy.
    *
    *  Quyết định thời gian rơi, và qua đó quyết định mỗi nhịp hàng ứng với bao
-   *  nhiêu mm ngoài đời. Xem geometry.js. Mặc định lấy theo
-   *  DEFAULT_CURTAIN_HEIGHT_M của waterfall-sprite. */
-  CURTAIN_HEIGHT_M: 2.0,
+   *  nhiêu mm ngoài đời. Xem geometry.js. Lấy từ panel Physical config của
+   *  Waterfall Designer; app tự tính ra fall_time 1428ms / visible_rows 89 ở
+   *  nhịp 16ms, dùng để đối chiếu. */
+  CURTAIN_HEIGHT_M: 10.0,
   GRAVITY_M_S2: 9.81,
 
   /** Gửi hàng DƯỚI CÙNG của canvas trước.
