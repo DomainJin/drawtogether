@@ -34,6 +34,23 @@ export function valveBits(valves, B) {
   return buf
 }
 
+function sameBits(a, b) {
+  if (a.length !== b.length) return false
+  for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) return false
+  return true
+}
+
+/** Dựng chuỗi frame cho một hoạ tiết.
+ *
+ *  Firmware GIỮ NGUYÊN trạng thái van cho tới khi nhận frame kế tiếp, nên phải
+ *  sinh frame mỗi khi trạng thái ĐỔI — kể cả khi đổi thành toàn tắt.
+ *
+ *  Bản cũ bỏ qua mọi hàng trống (`if (bits.some(b => b !== 0))`), nên van của
+ *  hàng có nét cuối cùng cứ mở tiếp cho tới frame tắt ở cuối hoạ tiết. Vẽ tới
+ *  hàng 30 trong 64 hàng là van kẹt mở thêm 34 hàng — hơn 2,7 giây ở nhịp 80ms.
+ *
+ *  Đổi-mới-gửi cũng khiến các hàng giống hệt nhau gộp thành một frame, nên số
+ *  frame còn ÍT hơn bản cũ với hoạ tiết có mảng đặc. */
 export function buildAnimationFrames(rows, rowIntervalMs, valveCount) {
   const B = valveBytesFor(valveCount)
   const frames = [
@@ -41,12 +58,17 @@ export function buildAnimationFrames(rows, rowIntervalMs, valveCount) {
     packFrame(TS_RESET, new Uint8Array(B)),
     packFrame(TS_START, new Uint8Array(B)),
   ]
+
+  let prev = null
   rows.forEach((openValves, i) => {
     const bits = valveBits(openValves, B)
-    if (bits.some((b) => b !== 0)) {
-      frames.push(packFrame(i * rowIntervalMs, bits))
-    }
+    if (prev && sameBits(prev, bits)) return
+    frames.push(packFrame(i * rowIntervalMs, bits))
+    prev = bits
   })
+
+  // Luôn chốt bằng một frame tắt hết: hoạ tiết chạy xong thì van phải đóng,
+  // không phụ thuộc hàng cuối có nét hay không.
   frames.push(packFrame(rows.length * rowIntervalMs, new Uint8Array(B)))
   return frames
 }
