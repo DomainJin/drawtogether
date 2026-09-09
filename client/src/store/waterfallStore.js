@@ -1,6 +1,6 @@
 import { create } from 'zustand'
 import { WATERFALL_CONFIG as CFG, WATERFALL_UI as UI } from '../waterfall/config.js'
-import { createEmptyGrid, resizeGrid, setCell as setCellPure } from '../waterfall/grid.js'
+import { createEmptyGrid, resizeGrid, setCell as setCellPure, stampCells } from '../waterfall/grid.js'
 import { ValveSocket, SOCKET_STATUS } from '../waterfall/valveSocket.js'
 import { buildAnimationFrames, gridToOpenValveRows } from '../waterfall/valveCodec.js'
 import { cmdAllOff, cmdGetConfig } from '../waterfall/commands.js'
@@ -146,7 +146,20 @@ export const useWaterfallStore = create((set, get) => ({
   },
 
   setCell: (row, col, value) => set((s) => ({ grid: setCellPure(s.grid, row, col, value) })),
+
+  /** Tô/xoá cả một nét trong một lần cập nhật — xem stampCells(). */
+  paintCells: (cells, value) => set((s) => ({ grid: stampCells(s.grid, cells, value) })),
+
   clearGrid: () => set((s) => ({ grid: createEmptyGrid(s.rowCount, s.cols) })),
+
+  // ── Bút vẽ ─────────────────────────────────────────────────────────────────
+  // Trước đây nét luôn rộng 1 ô và giá trị tô được quyết định bằng cách ĐẢO ô
+  // đầu tiên chạm vào — nên đồ lại lên vùng đã vẽ là xoá nó đi, không đậm thêm.
+  // Giờ tách hẳn bút và tẩy như Toolbar của whiteboard.
+  brushTool: 'pen',
+  setBrushTool: (brushTool) => set({ brushTool }),
+  brushPx: CFG.DEFAULT_BRUSH_PX,
+  setBrushPx: (brushPx) => set({ brushPx }),
 
   sending: false,
   lastSentAt: null,

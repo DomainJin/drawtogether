@@ -1,18 +1,24 @@
 import { useEffect, useRef, useCallback } from 'react'
 import { useWaterfallStore } from '../../store/waterfallStore.js'
+import { brushRadii, pointCells, strokeCells } from '../../waterfall/brush.js'
 
 const ON_COLOR = '#378ADD'
 const OFF_COLOR = '#eef3f8'
 const GRID_LINE = 'rgba(0,0,0,0.06)'
 
+/** Dưới ngưỡng này thì lưới dày tới mức đường kẻ lấn hết ô — vẽ xong chỉ thấy
+ *  một mảng xám. Màn 4 m có 160 cột nên trên điện thoại luôn rơi vào trường
+ *  hợp này. */
+const MIN_CELL_PX_FOR_GRID_LINES = 6
+
 export default function WaterfallCanvas() {
   const canvasRef = useRef(null)
   const containerRef = useRef(null)
   const isPaintingRef = useRef(false)
-  const paintValueRef = useRef(1)
-  const lastCellRef = useRef({ row: -1, col: -1 })
+  /** Điểm cuối của nét, toạ độ ô dạng số thực. Nội suy từ đây tới điểm mới. */
+  const lastPointRef = useRef(null)
 
-  const { grid, cols, rowCount, setCell } = useWaterfallStore()
+  const { grid, cols, rowCount, brushTool, brushPx, paintCells } = useWaterfallStore()
 
   const draw = useCallback(() => {
     const canvas = canvasRef.current
@@ -24,27 +30,36 @@ export default function WaterfallCanvas() {
     const cellW = width / cols
     const cellH = height / rowCount
 
+    ctx.fillStyle = OFF_COLOR
+    ctx.fillRect(0, 0, width, height)
+
+    ctx.fillStyle = ON_COLOR
     for (let r = 0; r < rowCount; r++) {
       const row = grid[r]
       if (!row) continue
       for (let c = 0; c < cols; c++) {
-        ctx.fillStyle = row[c] ? ON_COLOR : OFF_COLOR
-        ctx.fillRect(c * cellW, r * cellH, cellW, cellH)
+        if (!row[c]) continue
+        // Math.ceil để các ô kề nhau không hở sọc trắng khi cellW < 1px.
+        ctx.fillRect(c * cellW, r * cellH, Math.ceil(cellW), Math.ceil(cellH))
       }
     }
 
     ctx.strokeStyle = GRID_LINE
     ctx.lineWidth = 1
     ctx.beginPath()
-    for (let c = 0; c <= cols; c++) {
-      const x = Math.round(c * cellW) + 0.5
-      ctx.moveTo(x, 0)
-      ctx.lineTo(x, height)
+    if (cellW >= MIN_CELL_PX_FOR_GRID_LINES) {
+      for (let c = 0; c <= cols; c++) {
+        const x = Math.round(c * cellW) + 0.5
+        ctx.moveTo(x, 0)
+        ctx.lineTo(x, height)
+      }
     }
-    for (let r = 0; r <= rowCount; r++) {
-      const y = Math.round(r * cellH) + 0.5
-      ctx.moveTo(0, y)
-      ctx.lineTo(width, y)
+    if (cellH >= MIN_CELL_PX_FOR_GRID_LINES) {
+      for (let r = 0; r <= rowCount; r++) {
+        const y = Math.round(r * cellH) + 0.5
+        ctx.moveTo(0, y)
+        ctx.lineTo(width, y)
+      }
     }
     ctx.stroke()
   }, [grid, cols, rowCount])
@@ -68,42 +83,48 @@ export default function WaterfallCanvas() {
 
   useEffect(() => { draw() }, [draw])
 
-  const cellFromEvent = useCallback((e) => {
-    const canvas = canvasRef.current
-    const rect = canvas.getBoundingClientRect()
-    const x = e.clientX - rect.left
-    const y = e.clientY - rect.top
-    const col = Math.floor((x / rect.width) * cols)
-    const row = Math.floor((y / rect.height) * rowCount)
-    return { row, col }
+  /** Vị trí con trỏ theo toạ độ ô, GIỮ phần lẻ — làm tròn sớm khiến nét giật
+   *  theo lưới và nội suy mất chính xác. */
+  const pointFromEvent = useCallback((e) => {
+    const rect = canvasRef.current.getBoundingClientRect()
+    return {
+      col: ((e.clientX - rect.left) / rect.width) * cols,
+      row: ((e.clientY - rect.top) / rect.height) * rowCount,
+      cellW: rect.width / cols,
+      cellH: rect.height / rowCount,
+    }
   }, [cols, rowCount])
-
-  const paintAt = useCallback((row, col) => {
-    if (row < 0 || row >= rowCount || col < 0 || col >= cols) return
-    if (lastCellRef.current.row === row && lastCellRef.current.col === col) return
-    lastCellRef.current = { row, col }
-    setCell(row, col, paintValueRef.current)
-  }, [rowCount, cols, setCell])
 
   const onPointerDown = useCallback((e) => {
     e.preventDefault()
     e.target.setPointerCapture(e.pointerId)
-    const { row, col } = cellFromEvent(e)
-    if (row < 0 || row >= rowCount || col < 0 || col >= cols) return
-    paintValueRef.current = grid[row]?.[col] ? 0 : 1
+
+    const p = pointFromEvent(e)
+    const { radRows, radCols } = brushRadii(brushPx, p.cellW, p.cellH)
+
     isPaintingRef.current = true
-    lastCellRef.current = { row: -1, col: -1 }
-    paintAt(row, col)
-  }, [cellFromEvent, grid, rowCount, cols, paintAt])
+    lastPointRef.current = p
+    // Bút luôn tô 1, tẩy luôn tô 0. Không đảo theo ô đang chạm, nhờ vậy đồ lại
+    // lên vùng đã vẽ chỉ dày thêm chứ không xoá mất.
+    paintCells(pointCells(p, radRows, radCols), brushTool === 'eraser' ? 0 : 1)
+  }, [pointFromEvent, brushPx, brushTool, paintCells])
 
   const onPointerMove = useCallback((e) => {
     if (!isPaintingRef.current) return
     e.preventDefault()
-    const { row, col } = cellFromEvent(e)
-    paintAt(row, col)
-  }, [cellFromEvent, paintAt])
 
-  const stopPainting = useCallback(() => { isPaintingRef.current = false }, [])
+    const p = pointFromEvent(e)
+    const from = lastPointRef.current || p
+    const { radRows, radCols } = brushRadii(brushPx, p.cellW, p.cellH)
+
+    paintCells(strokeCells(from, p, radRows, radCols), brushTool === 'eraser' ? 0 : 1)
+    lastPointRef.current = p
+  }, [pointFromEvent, brushPx, brushTool, paintCells])
+
+  const stopPainting = useCallback(() => {
+    isPaintingRef.current = false
+    lastPointRef.current = null
+  }, [])
 
   return (
     <div ref={containerRef} style={{ position: 'relative', width: '100%', height: '100%' }}>
@@ -113,6 +134,7 @@ export default function WaterfallCanvas() {
         onPointerDown={onPointerDown}
         onPointerMove={onPointerMove}
         onPointerUp={stopPainting}
+        onPointerCancel={stopPainting}
         onPointerLeave={stopPainting}
       />
     </div>

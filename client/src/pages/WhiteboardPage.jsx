@@ -8,7 +8,7 @@ import CursorOverlay from '../components/CursorOverlay.jsx'
 import UserList from '../components/UserList.jsx'
 import AnimateOverlay from '../components/AnimateOverlay.jsx'
 import { useWaterfallStore } from '../store/waterfallStore.js'
-import { WaterfallCanvas, WaterfallPanel, useIsMobile } from '../components/Waterfall/index.js'
+import { WaterfallCanvas, WaterfallPanel, WaterfallTools, useIsMobile } from '../components/Waterfall/index.js'
 import { WATERFALL_UI as WFUI } from '../waterfall/config.js'
 import { attachWaterfallBridgeListeners } from '../waterfall/bridgeTransport.js'
 
@@ -296,6 +296,7 @@ export default function WhiteboardPage() {
             }}>
               <WaterfallCanvas />
             </div>
+          <WaterfallTools isMobile={isMobile} panelOpen={panelOpen} />
           <WaterfallPanel onExit={() => setWaterfallActive(false)} />
         </>
       ) : (

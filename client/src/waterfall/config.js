@@ -23,6 +23,13 @@ export const WATERFALL_CONFIG = {
   MIN_ROW_INTERVAL_MS: 10,
   MAX_ROW_INTERVAL_MS: 300,
   MAX_VALVES: 512,
+
+  /** Bề dày nét vẽ — đường kính tính bằng pixel trên màn, giống dải width của
+   *  Toolbar whiteboard. Để theo pixel chứ không theo số ô vì ô lưới rất hẹp
+   *  và cao (160 cột × 24-64 hàng): nét phải tròn theo mắt nhìn thì mới dễ vẽ.
+   *  brush.js quy đổi ra bán kính số ô riêng cho từng trục. */
+  BRUSH_SIZES_PX: [4, 10, 20, 34],
+  DEFAULT_BRUSH_PX: 10,
   /** Số frame tối đa nhét trong MỘT gói socket.io.
    *
    *  Mỗi Uint8Array là một "binary attachment", và socket.io-parser mặc định
