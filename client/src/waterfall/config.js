@@ -24,6 +24,14 @@ export const WATERFALL_CONFIG = {
   MAX_ROW_INTERVAL_MS: 300,
   MAX_VALVES: 512,
 
+  /** Chiều cao màn nước (m) — quãng nước rơi từ vòi tới đáy.
+   *
+   *  Quyết định thời gian rơi, và qua đó quyết định mỗi nhịp hàng ứng với bao
+   *  nhiêu mm ngoài đời. Xem geometry.js. Mặc định lấy theo
+   *  DEFAULT_CURTAIN_HEIGHT_M của waterfall-sprite. */
+  CURTAIN_HEIGHT_M: 2.0,
+  GRAVITY_M_S2: 9.81,
+
   /** Bề dày nét vẽ — đường kính tính bằng pixel trên màn, giống dải width của
    *  Toolbar whiteboard. Để theo pixel chứ không theo số ô vì ô lưới rất hẹp
    *  và cao (160 cột × 24-64 hàng): nét phải tròn theo mắt nhìn thì mới dễ vẽ.

@@ -150,7 +150,27 @@ export const useWaterfallStore = create((set, get) => ({
   /** Tô/xoá cả một nét trong một lần cập nhật — xem stampCells(). */
   paintCells: (cells, value) => set((s) => ({ grid: stampCells(s.grid, cells, value) })),
 
-  clearGrid: () => set((s) => ({ grid: createEmptyGrid(s.rowCount, s.cols) })),
+  clearGrid: () => set((s) => ({ grid: createEmptyGrid(s.rowCount, s.cols), strokes: [] })),
+
+  // ── Nét vector, CHỈ để hiển thị ────────────────────────────────────────────
+  // `grid` vẫn là nguồn sự thật duy nhất cho thứ gửi đi. Mảng này giữ đường đi
+  // thật của ngón tay ở độ phân giải màn hình để vẽ lại cho mượt — lưới 160x64
+  // có ô cao gấp 3,5 lần bề rộng nên tự nó không bao giờ cho nét đều được.
+  // Toạ độ chuẩn hoá 0..1 để đổi kích thước canvas không hỏng nét.
+  strokes: [],
+  beginStroke: (point, tool, px) =>
+    set((s) => ({ strokes: [...s.strokes, { tool, px, points: [point] }] })),
+  extendStroke: (point) =>
+    set((s) => {
+      if (!s.strokes.length) return s
+      const last = s.strokes[s.strokes.length - 1]
+      const next = { ...last, points: [...last.points, point] }
+      return { strokes: [...s.strokes.slice(0, -1), next] }
+    }),
+
+  /** Bật để xem đúng lưới van sẽ gửi đi, thay vì nét mượt. */
+  showGridPreview: false,
+  toggleGridPreview: () => set((s) => ({ showGridPreview: !s.showGridPreview })),
 
   // ── Bút vẽ ─────────────────────────────────────────────────────────────────
   // Trước đây nét luôn rộng 1 ô và giá trị tô được quyết định bằng cách ĐẢO ô

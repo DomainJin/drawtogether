@@ -16,7 +16,10 @@ const TOOLS = [
  * @param {boolean} panelOpen desktop: canvas bị panel chiếm bề ngang, dịch tâm
  */
 export default function WaterfallTools({ isMobile, panelOpen }) {
-  const { brushTool, setBrushTool, brushPx, setBrushPx, clearGrid, grid } = useWaterfallStore()
+  const {
+    brushTool, setBrushTool, brushPx, setBrushPx, clearGrid, grid,
+    showGridPreview, toggleGridPreview,
+  } = useWaterfallStore()
 
   const hasPattern = grid.some((row) => row.some((v) => v))
 
@@ -80,6 +83,21 @@ export default function WaterfallTools({ isMobile, panelOpen }) {
           </button>
         ))}
       </div>
+
+      <div style={{ width: 1, height: 26, background: 'rgba(0,0,0,0.1)' }} />
+
+      {/* Nét hiển thị là vector mượt, còn thứ gửi đi là lưới 160x64. Nút này
+          cho xem đúng lưới đó — giữ được WYSIWYG dưới dạng kiểm tra chủ động. */}
+      <button
+        title={showGridPreview ? 'Quay lại nét mượt' : 'Xem đúng lưới van sẽ gửi'}
+        onClick={toggleGridPreview}
+        style={{
+          height: 40, padding: '0 12px', borderRadius: 10, border: 'none',
+          background: showGridPreview ? '#1a1a1a' : 'transparent',
+          color: showGridPreview ? '#fff' : '#1a1a1a',
+          cursor: 'pointer', fontSize: 14, fontWeight: 600, whiteSpace: 'nowrap',
+        }}
+      >▦ Lưới</button>
 
       <div style={{ width: 1, height: 26, background: 'rgba(0,0,0,0.1)' }} />
 
