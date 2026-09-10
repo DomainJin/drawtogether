@@ -63,6 +63,16 @@ export const WATERFALL_CONFIG = {
    *  chỉ cần đặt false, không phải sửa code. */
   EMIT_BOTTOM_ROW_FIRST: true,
 
+  /** Bỏ các hàng TRỐNG ở đầu và cuối hoạ tiết.
+   *
+   *  Hàng trống vẫn chiếm đủ thời gian của nó: vẽ ở nửa trên canvas 256 hàng
+   *  thì toàn bộ vùng trống phía dưới được gửi trước, bấm Gửi xong phải chờ
+   *  hơn 3 giây mới thấy nước. Cắt đi rồi dịch mốc thời gian về 0 thì hoạ
+   *  tiết chạy ngay, mà nội dung và nhịp bên trong không đổi một chút nào.
+   *
+   *  Đặt false nếu bạn muốn giữ đúng khoảng lặng đã vẽ. */
+  TRIM_EMPTY_ROWS: true,
+
   /** Bề dày nét vẽ — đường kính tính bằng pixel trên màn, giống dải width của
    *  Toolbar whiteboard. Để theo pixel chứ không theo số ô vì ô lưới rất hẹp
    *  và cao (160 cột × 24-64 hàng): nét phải tròn theo mắt nhìn thì mới dễ vẽ.

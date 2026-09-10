@@ -51,7 +51,7 @@ function sameBits(a, b) {
  *
  *  Đổi-mới-gửi cũng khiến các hàng giống hệt nhau gộp thành một frame, nên số
  *  frame còn ÍT hơn bản cũ với hoạ tiết có mảng đặc. */
-export function buildAnimationFrames(rows, rowIntervalMs, valveCount) {
+export function buildAnimationFrames(rows, rowIntervalMs, valveCount, trimEmpty = false) {
   const B = valveBytesFor(valveCount)
   const frames = [
     packConfigFrame(valveCount),
@@ -59,17 +59,32 @@ export function buildAnimationFrames(rows, rowIntervalMs, valveCount) {
     packFrame(TS_START, new Uint8Array(B)),
   ]
 
+  // Dải hàng thật sự có nội dung. Hàng trống ở hai đầu vẫn chiếm đủ thời gian
+  // của nó, nên cắt đi rồi dịch mốc về 0 — xem TRIM_EMPTY_ROWS trong config.
+  let first = 0
+  let last = rows.length - 1
+  if (trimEmpty) {
+    while (first <= last && rows[first].length === 0) first++
+    while (last >= first && rows[last].length === 0) last--
+  }
+
+  if (first > last) {
+    // Lưới trống trơn: chỉ cần một frame tắt, không dựng cả hoạ tiết rỗng.
+    frames.push(packFrame(0, new Uint8Array(B)))
+    return frames
+  }
+
   let prev = null
-  rows.forEach((openValves, i) => {
-    const bits = valveBits(openValves, B)
-    if (prev && sameBits(prev, bits)) return
-    frames.push(packFrame(i * rowIntervalMs, bits))
+  for (let i = first; i <= last; i++) {
+    const bits = valveBits(rows[i], B)
+    if (prev && sameBits(prev, bits)) continue
+    frames.push(packFrame((i - first) * rowIntervalMs, bits))
     prev = bits
-  })
+  }
 
   // Luôn chốt bằng một frame tắt hết: hoạ tiết chạy xong thì van phải đóng,
   // không phụ thuộc hàng cuối có nét hay không.
-  frames.push(packFrame(rows.length * rowIntervalMs, new Uint8Array(B)))
+  frames.push(packFrame((last - first + 1) * rowIntervalMs, new Uint8Array(B)))
   return frames
 }
 
