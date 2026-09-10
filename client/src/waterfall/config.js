@@ -119,4 +119,13 @@ export const WATERFALL_UI = {
   SHEET_COLLAPSED_PX: 148,
   /** Bề rộng thẻ điều khiển nổi khi thu gọn trên desktop. */
   COMPACT_CARD_PX: 320,
+
+  /** Cạnh nút của thanh công cụ vẽ. Mobile nhỏ hơn vì thanh phải lọt trong
+   *  92vw: ở cỡ desktop nó tràn khỏi màn hình điện thoại, nuốt mất nút Undo,
+   *  Lưới và Xoá hết. Vẫn ≥ 34px cho vừa đầu ngón tay. */
+  TOOLBAR_BTN_PX: 40,
+  TOOLBAR_BTN_MOBILE_PX: 34,
+  /** Khoảng hở giữa các nhóm công cụ. Trên mobile thay luôn cho vạch ngăn —
+   *  thanh xuống dòng được, mà vạch ngăn rơi đầu dòng thì rất xấu. */
+  TOOLBAR_GROUP_GAP_PX: 8,
 }

@@ -151,7 +151,7 @@ export const useWaterfallStore = create((set, get) => ({
   /** Tô/xoá cả một nét trong một lần cập nhật — xem stampCells(). */
   paintCells: (cells, value) => set((s) => ({ grid: stampCells(s.grid, cells, value) })),
 
-  clearGrid: () => set((s) => ({ grid: createEmptyGrid(s.rowCount, s.cols), strokes: [] })),
+  clearGrid: () => set((s) => ({ grid: createEmptyGrid(s.rowCount, s.cols), strokes: [], redoStack: [] })),
 
   // ── Nét vector, CHỈ để hiển thị ────────────────────────────────────────────
   // `grid` vẫn là nguồn sự thật duy nhất cho thứ gửi đi. Mảng này giữ đường đi
@@ -159,10 +159,16 @@ export const useWaterfallStore = create((set, get) => ({
   // có ô cao gấp 3,5 lần bề rộng nên tự nó không bao giờ cho nét đều được.
   // Toạ độ chuẩn hoá 0..1 để đổi kích thước canvas không hỏng nét.
   strokes: [],
+  /** Các nét đã Undo, chờ Redo. Vẽ nét mới thì bỏ hết — nhánh cũ không còn nối
+   *  tiếp được nữa, giữ lại chỉ khiến Redo dán một nét lạ vào hoạ tiết. */
+  redoStack: [],
   /** radRows/radCols lưu theo Ô, không theo pixel màn hình: nhờ vậy Undo dựng
    *  lại được đúng hoạ tiết cũ dù cửa sổ đã đổi cỡ hoặc máy vừa xoay ngang. */
   beginStroke: (point, tool, px, radRows, radCols) =>
-    set((s) => ({ strokes: [...s.strokes, { tool, px, radRows, radCols, points: [point] }] })),
+    set((s) => ({
+      strokes: [...s.strokes, { tool, px, radRows, radCols, points: [point] }],
+      redoStack: [],
+    })),
   extendStroke: (point) =>
     set((s) => {
       if (!s.strokes.length) return s
@@ -176,7 +182,23 @@ export const useWaterfallStore = create((set, get) => ({
   undoStroke: () => set((s) => {
     if (s.strokes.length === 0) return s
     const strokes = s.strokes.slice(0, -1)
-    return { strokes, grid: rebuildGrid(strokes, s.rowCount, s.cols) }
+    return {
+      strokes,
+      redoStack: [...s.redoStack, s.strokes[s.strokes.length - 1]],
+      grid: rebuildGrid(strokes, s.rowCount, s.cols),
+    }
+  }),
+
+  /** Vẽ lại nét vừa bỏ. Cũng dựng lại lưới từ đầu vì cùng lý do như Undo: nét
+   *  tẩy không "cộng ngược" được vào lưới hiện tại. */
+  redoStroke: () => set((s) => {
+    if (s.redoStack.length === 0) return s
+    const strokes = [...s.strokes, s.redoStack[s.redoStack.length - 1]]
+    return {
+      strokes,
+      redoStack: s.redoStack.slice(0, -1),
+      grid: rebuildGrid(strokes, s.rowCount, s.cols),
+    }
   }),
 
   /** Vùng đang nhìn thấy trong khung vẽ, để thanh cuộn và minimap vẽ theo.
