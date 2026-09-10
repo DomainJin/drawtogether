@@ -1,6 +1,7 @@
 import { create } from 'zustand'
 import { WATERFALL_CONFIG as CFG, WATERFALL_UI as UI } from '../waterfall/config.js'
 import { createEmptyGrid, resizeGrid, setCell as setCellPure, stampCells } from '../waterfall/grid.js'
+import { rebuildGrid } from '../waterfall/strokeReplay.js'
 import { ValveSocket, SOCKET_STATUS } from '../waterfall/valveSocket.js'
 import { buildAnimationFrames, gridToOpenValveRows } from '../waterfall/valveCodec.js'
 import { cmdAllOff, cmdGetConfig } from '../waterfall/commands.js'
@@ -158,8 +159,10 @@ export const useWaterfallStore = create((set, get) => ({
   // có ô cao gấp 3,5 lần bề rộng nên tự nó không bao giờ cho nét đều được.
   // Toạ độ chuẩn hoá 0..1 để đổi kích thước canvas không hỏng nét.
   strokes: [],
-  beginStroke: (point, tool, px) =>
-    set((s) => ({ strokes: [...s.strokes, { tool, px, points: [point] }] })),
+  /** radRows/radCols lưu theo Ô, không theo pixel màn hình: nhờ vậy Undo dựng
+   *  lại được đúng hoạ tiết cũ dù cửa sổ đã đổi cỡ hoặc máy vừa xoay ngang. */
+  beginStroke: (point, tool, px, radRows, radCols) =>
+    set((s) => ({ strokes: [...s.strokes, { tool, px, radRows, radCols, points: [point] }] })),
   extendStroke: (point) =>
     set((s) => {
       if (!s.strokes.length) return s
@@ -167,6 +170,19 @@ export const useWaterfallStore = create((set, get) => ({
       const next = { ...last, points: [...last.points, point] }
       return { strokes: [...s.strokes.slice(0, -1), next] }
     }),
+
+  /** Bỏ nét vừa vẽ. Phải dựng lại lưới từ các nét còn lại chứ không "trừ
+   *  ngược" được — nét sau có thể đã đè lên nét trước, tẩy thì xoá mất dấu. */
+  undoStroke: () => set((s) => {
+    if (s.strokes.length === 0) return s
+    const strokes = s.strokes.slice(0, -1)
+    return { strokes, grid: rebuildGrid(strokes, s.rowCount, s.cols) }
+  }),
+
+  /** Vùng đang nhìn thấy trong khung vẽ, để thanh cuộn và minimap vẽ theo.
+   *  Đặt ở store vì canvas sở hữu phần cuộn còn hai thành phần kia nằm ngoài. */
+  viewport: { scrollTop: 0, viewHeight: 0, contentHeight: 0 },
+  setViewport: (viewport) => set({ viewport }),
 
   /** Bật để xem đúng lưới van sẽ gửi đi, thay vì nét mượt. */
   showGridPreview: false,

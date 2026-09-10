@@ -18,7 +18,7 @@ const TOOLS = [
 export default function WaterfallTools({ isMobile, panelOpen }) {
   const {
     brushTool, setBrushTool, brushPx, setBrushPx, clearGrid, grid,
-    showGridPreview, toggleGridPreview,
+    showGridPreview, toggleGridPreview, undoStroke, strokes,
   } = useWaterfallStore()
 
   const hasPattern = grid.some((row) => row.some((v) => v))
@@ -83,6 +83,23 @@ export default function WaterfallTools({ isMobile, panelOpen }) {
           </button>
         ))}
       </div>
+
+      <div style={{ width: 1, height: 26, background: 'rgba(0,0,0,0.1)' }} />
+
+      {/* Undo: bỏ nét vừa vẽ. Trên điện thoại không có Ctrl+Z, mà vẽ tay thì
+          trượt một nhát là hỏng cả mảng — thiếu nút này phải xoá hết vẽ lại. */}
+      <button
+        title="Bỏ nét vừa vẽ"
+        onClick={undoStroke}
+        disabled={strokes.length === 0}
+        style={{
+          width: 40, height: 40, borderRadius: 10, border: 'none',
+          background: 'transparent',
+          color: strokes.length ? '#1a1a1a' : '#c4c4c4',
+          cursor: strokes.length ? 'pointer' : 'not-allowed',
+          fontSize: 18,
+        }}
+      >↶</button>
 
       <div style={{ width: 1, height: 26, background: 'rgba(0,0,0,0.1)' }} />
 

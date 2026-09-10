@@ -5,6 +5,7 @@ import { brushRadii, pointCells, strokeCells } from '../../waterfall/brush.js'
 import { canvasSizeForWidth, patternAspect, renderScale } from '../../waterfall/geometry.js'
 import { createGridRenderer } from './gridRenderer.js'
 import { createStrokeRenderer } from './strokeRenderer.js'
+import { bindScroller } from './scrollController.js'
 
 const ON_COLOR = '#1a1a1a'
 const OFF_COLOR = '#ffffff'
@@ -44,7 +45,7 @@ export default function WaterfallCanvas() {
 
   const {
     grid, cols, rowCount, rowIntervalMs, brushTool, brushPx, paintCells,
-    strokes, beginStroke, extendStroke, showGridPreview,
+    strokes, beginStroke, extendStroke, showGridPreview, setViewport,
   } = useWaterfallStore()
 
   const aspect = patternAspect({
@@ -55,6 +56,16 @@ export default function WaterfallCanvas() {
 
   if (!gridRendererRef.current) gridRendererRef.current = createGridRenderer()
   if (!strokeRendererRef.current) strokeRendererRef.current = createStrokeRenderer()
+
+  const reportViewport = useCallback(() => {
+    const scroller = scrollRef.current
+    if (!scroller) return
+    setViewport({
+      scrollTop: scroller.scrollTop,
+      viewHeight: scroller.clientHeight,
+      contentHeight: scroller.scrollHeight,
+    })
+  }, [setViewport])
 
   const draw = useCallback(() => {
     const canvas = canvasRef.current
@@ -89,6 +100,12 @@ export default function WaterfallCanvas() {
     if (!canvas || !scroller) return
 
     const resize = () => {
+      // Giữ nguyên vị trí đang xem khi xoay máy: đo theo TỈ LỆ trước, đặt lại
+      // sau. Xoay ngang làm canvas cao thêm hàng trăm pixel, giữ nguyên
+      // scrollTop tính bằng pixel sẽ nhảy sang chỗ khác hẳn.
+      const before = scroller.scrollHeight - scroller.clientHeight
+      const fraction = before > 0 ? scroller.scrollTop / before : 0
+
       const { width, height } = canvasSizeForWidth(scroller.clientWidth, aspectRef.current)
       if (!width || !height) return
       canvas.style.width = `${width}px`
@@ -102,13 +119,33 @@ export default function WaterfallCanvas() {
       canvas.getContext('2d').setTransform(scale, 0, 0, scale, 0, 0)
       sizeRef.current = { width, height }
       draw()
+
+      const after = scroller.scrollHeight - scroller.clientHeight
+      if (after > 0) scroller.scrollTop = fraction * after
+      reportViewport()
     }
 
     resizeRef.current = resize
+    bindScroller(scroller)
     resize()
+
+    // Gộp về một lần mỗi khung hình: cuộn bằng ngón tay bắn sự kiện dày hơn
+    // nhịp vẽ rất nhiều, cập nhật store theo từng cái là re-render vô ích.
+    let raf = null
+    const onScroll = () => {
+      if (raf !== null) return
+      raf = requestAnimationFrame(() => { raf = null; reportViewport() })
+    }
+    scroller.addEventListener('scroll', onScroll, { passive: true })
+
     const ro = new ResizeObserver(resize)
     ro.observe(scroller)
-    return () => ro.disconnect()
+    return () => {
+      ro.disconnect()
+      scroller.removeEventListener('scroll', onScroll)
+      if (raf !== null) cancelAnimationFrame(raf)
+      bindScroller(null)
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
@@ -162,7 +199,7 @@ export default function WaterfallCanvas() {
     const { radRows, radCols } = brushRadii(brushPx, p.cellW, p.cellH)
 
     activeIndexRef.current = useWaterfallStore.getState().strokes.length
-    beginStroke(p.norm, brushTool, brushPx)
+    beginStroke(p.norm, brushTool, brushPx, radRows, radCols)
     lastCellPointRef.current = p.cell
     // Bút luôn tô 1, tẩy luôn tô 0 — đồ lại lên vùng đã vẽ thì dày thêm, không xoá.
     paintCells(pointCells(p.cell, radRows, radCols), brushTool === 'eraser' ? 0 : 1)
@@ -177,6 +214,7 @@ export default function WaterfallCanvas() {
       const y = midY()
       if (panLastYRef.current !== null && scrollRef.current) {
         scrollRef.current.scrollTop -= y - panLastYRef.current
+        reportViewport()
       }
       panLastYRef.current = y
       return

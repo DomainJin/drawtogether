@@ -8,7 +8,7 @@ import CursorOverlay from '../components/CursorOverlay.jsx'
 import UserList from '../components/UserList.jsx'
 import AnimateOverlay from '../components/AnimateOverlay.jsx'
 import { useWaterfallStore } from '../store/waterfallStore.js'
-import { WaterfallCanvas, WaterfallPanel, WaterfallTools, useIsMobile } from '../components/Waterfall/index.js'
+import { WaterfallCanvas, WaterfallPanel, WaterfallTools, WaterfallScrollbar, WaterfallMiniMap, useIsMobile } from '../components/Waterfall/index.js'
 import { WATERFALL_UI as WFUI } from '../waterfall/config.js'
 import { attachWaterfallBridgeListeners } from '../waterfall/bridgeTransport.js'
 
@@ -295,6 +295,10 @@ export default function WhiteboardPage() {
               touchAction: 'none',
             }}>
               <WaterfallCanvas />
+              {/* Thanh cuộn và minimap nằm TRONG khung vẽ để bám theo đúng
+                  vùng đó, không bị bottom sheet che. */}
+              <WaterfallScrollbar bottomOffset={0} />
+              <WaterfallMiniMap bottomOffset={0} />
             </div>
           <WaterfallTools isMobile={isMobile} panelOpen={panelOpen} />
           <WaterfallPanel onExit={() => setWaterfallActive(false)} />

@@ -1,4 +1,6 @@
 export { default as WaterfallCanvas } from './WaterfallCanvas.jsx'
 export { default as WaterfallPanel } from './WaterfallPanel.jsx'
 export { default as WaterfallTools } from './WaterfallTools.jsx'
+export { default as WaterfallScrollbar } from './WaterfallScrollbar.jsx'
+export { default as WaterfallMiniMap } from './WaterfallMiniMap.jsx'
 export { useIsMobile, useWaterfallPanel } from './useWaterfallPanel.js'

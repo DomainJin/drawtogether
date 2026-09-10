@@ -81,7 +81,14 @@ export default function WaterfallPanel({ onExit }) {
             <span style={{ marginLeft: 'auto', color: '#999', fontSize: 13 }}>
               {cols} × {rowCount}
             </span>
-            <button onClick={togglePanel} style={backBtnStyle}>Cài đặt</button>
+            {/* Biểu tượng thay chữ: trên iPhone mỗi pixel bề ngang đều là chỗ
+                vẽ bị mất. Nhãn đầy đủ vẫn còn ở title cho người dùng chuột. */}
+            <button
+              onClick={togglePanel}
+              title="Cài đặt màn nước"
+              aria-label="Cài đặt màn nước"
+              style={{ ...backBtnStyle, width: 40, height: 34, padding: 0, fontSize: 17 }}
+            >⚙</button>
           </div>
           <div style={sendRowStyle}>
             {sendBtn}
