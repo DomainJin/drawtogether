@@ -12,6 +12,10 @@
  *  Toạ độ điểm chuẩn hoá 0..1 nên đổi kích thước canvas không phải tính lại.
  */
 
+import { WATERFALL_CONFIG as CFG } from '../../waterfall/config.js'
+import { runsToShapes } from '../../waterfall/runGeometry.js'
+import { addShapesToPath } from './runsPath.js'
+
 const PEN_COLOR = '#1a1a1a'
 
 /** Vẽ một nét lên ctx. Canvas nhận nét phải TRONG SUỐT: tẩy dùng
@@ -117,10 +121,15 @@ export function createStrokeRenderer() {
 
 /** Vùng tô loang, vẽ từ chính các DẢI đã đóng dấu lên lưới.
  *
- *  Không làm mượt gì thêm: vùng tô sinh ra từ lưới van chứ không từ đường đi
- *  của ngón tay, nên vẽ đúng biên ô là cách trung thực nhất — thấy sao thì màn
- *  nước chạy vậy. Các dải kề nhau vẽ trong MỘT path rồi fill một lần, nếu
- *  không sẽ lộ chỉ trắng ở mối nối do khử răng cưa.
+ *  Vẽ mỗi hàng thành một hình chữ nhật trần là ra RĂNG CƯA to đúng bằng chiều
+ *  cao một hàng. Trên lưới 160 cột × vài trăm hàng, ô cao gấp mấy lần bề rộng,
+ *  mà biên một vùng tô thì hiếm khi thẳng đứng — biên hơi xiên là mỗi hàng lệch
+ *  ngang vài cột, thành bậc thang nhìn rõ mồn một bên cạnh nét bút mượt.
+ *
+ *  Nên dùng chung đúng bộ hình học với chế độ xem "Lưới": thanh bo góc cho mỗi
+ *  dải, cộng hình thang nối tâm hàng này sang tâm hàng kia để vạt góc vuông
+ *  thành cạnh dốc. Xem runGeometry.js. Dùng chung nghĩa là chỉnh độ mượt một
+ *  lần thì cả hai chỗ cùng đổi, không còn cảnh mượt một đằng răng cưa một nẻo.
  *
  *  Tô về 0 nghĩa là xoá một mảng đã vẽ — dùng destination-out như tẩy, để nó
  *  khoét vào nét cũ thay vì phủ một mảng trắng lên trên.
@@ -132,14 +141,19 @@ function drawFill(ctx, stroke, width, height) {
   const cols = stroke.gridCols
   if (!rows || !cols) return
 
-  const cellW = width / cols
-  const cellH = height / rows
+  const shapes = runsToShapes(runs, {
+    cellW: width / cols,
+    cellH: height / rows,
+    rowOverlap: CFG.PREVIEW_ROW_OVERLAP,
+    cornerRound: CFG.PREVIEW_CORNER_ROUND,
+    connectGapCells: CFG.PREVIEW_CONNECT_GAP_CELLS,
+  })
 
   if (stroke.value === 0) ctx.globalCompositeOperation = 'destination-out'
   ctx.fillStyle = PEN_COLOR
+  // Tất cả trong MỘT path rồi fill một lần: fill từng hình thì mối nối giữa
+  // thanh và hình thang lộ chỉ trắng do khử răng cưa.
   ctx.beginPath()
-  for (const { row, c0, c1 } of runs) {
-    ctx.rect(c0 * cellW, row * cellH, (c1 - c0 + 1) * cellW, cellH)
-  }
+  addShapesToPath(ctx, shapes)
   ctx.fill()
 }
