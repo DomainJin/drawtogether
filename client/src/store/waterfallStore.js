@@ -1,6 +1,7 @@
 import { create } from 'zustand'
 import { WATERFALL_CONFIG as CFG, WATERFALL_UI as UI } from '../waterfall/config.js'
-import { createEmptyGrid, resizeGrid, setCell as setCellPure, stampCells } from '../waterfall/grid.js'
+import { createEmptyGrid, resizeGrid, setCell as setCellPure, stampCells, stampRuns } from '../waterfall/grid.js'
+import { floodFillRuns } from '../waterfall/fill.js'
 import { rebuildGrid } from '../waterfall/strokeReplay.js'
 import { ValveSocket, SOCKET_STATUS } from '../waterfall/valveSocket.js'
 import { buildAnimationFrames, gridToOpenValveRows } from '../waterfall/valveCodec.js'
@@ -151,6 +152,34 @@ export const useWaterfallStore = create((set, get) => ({
   /** Tô/xoá cả một nét trong một lần cập nhật — xem stampCells(). */
   paintCells: (cells, value) => set((s) => ({ grid: stampCells(s.grid, cells, value) })),
 
+  /** Tô loang từ một điểm chuẩn hoá 0..1 trên canvas.
+   *
+   *  Ghi lại thành một "nét" như bút và tẩy, để Undo/Redo không phải biết tô
+   *  loang là gì — nó vẫn chỉ dựng lại lưới từ danh sách nét. Vùng phủ tính
+   *  trong rebuildGrid chứ không chốt cứng ở đây: bỏ một nét bút phía trước là
+   *  ranh giới đổi, vùng tô phải theo.
+   */
+  fillAt: (point) => set((s) => {
+    const row = Math.floor(point.y * s.rowCount)
+    const col = Math.floor(point.x * s.cols)
+    const filled = floodFillRuns(s.grid, row, col)
+    if (!filled) return s
+
+    const stroke = {
+      tool: 'fill',
+      point,
+      value: filled.value,
+      runs: filled.runs,
+      gridRows: s.rowCount,
+      gridCols: s.cols,
+    }
+    return {
+      grid: stampRuns(s.grid, filled.runs, filled.value),
+      strokes: [...s.strokes, stroke],
+      redoStack: [],
+    }
+  }),
+
   clearGrid: () => set((s) => ({ grid: createEmptyGrid(s.rowCount, s.cols), strokes: [], redoStack: [] })),
 
   // ── Nét vector, CHỈ để hiển thị ────────────────────────────────────────────
@@ -181,11 +210,11 @@ export const useWaterfallStore = create((set, get) => ({
    *  ngược" được — nét sau có thể đã đè lên nét trước, tẩy thì xoá mất dấu. */
   undoStroke: () => set((s) => {
     if (s.strokes.length === 0) return s
-    const strokes = s.strokes.slice(0, -1)
+    const rebuilt = rebuildGrid(s.strokes.slice(0, -1), s.rowCount, s.cols)
     return {
-      strokes,
+      strokes: rebuilt.strokes,
       redoStack: [...s.redoStack, s.strokes[s.strokes.length - 1]],
-      grid: rebuildGrid(strokes, s.rowCount, s.cols),
+      grid: rebuilt.grid,
     }
   }),
 
@@ -193,11 +222,11 @@ export const useWaterfallStore = create((set, get) => ({
    *  tẩy không "cộng ngược" được vào lưới hiện tại. */
   redoStroke: () => set((s) => {
     if (s.redoStack.length === 0) return s
-    const strokes = [...s.strokes, s.redoStack[s.redoStack.length - 1]]
+    const rebuilt = rebuildGrid([...s.strokes, s.redoStack[s.redoStack.length - 1]], s.rowCount, s.cols)
     return {
-      strokes,
+      strokes: rebuilt.strokes,
       redoStack: s.redoStack.slice(0, -1),
-      grid: rebuildGrid(strokes, s.rowCount, s.cols),
+      grid: rebuilt.grid,
     }
   }),
 
@@ -222,6 +251,9 @@ export const useWaterfallStore = create((set, get) => ({
   sending: false,
   lastSentAt: null,
   sendError: null,
+  /** Tắt thông báo lỗi gửi. Trên điện thoại lỗi hiện thành toast nổi đè lên
+   *  bảng vẽ; không có cách tắt thì nó che hoạ tiết cho tới lần gửi sau. */
+  clearSendError: () => set({ sendError: null }),
 
   allOff: async () => {
     const { transportMode, status, bridgeOnline } = get()

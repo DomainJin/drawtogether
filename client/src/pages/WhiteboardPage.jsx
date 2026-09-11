@@ -8,7 +8,7 @@ import CursorOverlay from '../components/CursorOverlay.jsx'
 import UserList from '../components/UserList.jsx'
 import AnimateOverlay from '../components/AnimateOverlay.jsx'
 import { useWaterfallStore } from '../store/waterfallStore.js'
-import { WaterfallCanvas, WaterfallPanel, WaterfallTools, WaterfallScrollbar, WaterfallMiniMap, useIsMobile } from '../components/Waterfall/index.js'
+import { WaterfallCanvas, WaterfallPanel, WaterfallTools, WaterfallDock, WaterfallScrollbar, WaterfallMiniMap, useIsMobile } from '../components/Waterfall/index.js'
 import { WATERFALL_UI as WFUI } from '../waterfall/config.js'
 import { attachWaterfallBridgeListeners } from '../waterfall/bridgeTransport.js'
 
@@ -285,13 +285,16 @@ export default function WhiteboardPage() {
 
       {waterfallActive ? (
         <>
-            {/* Chỗ chừa cho bảng điều khiển suy ra từ WATERFALL_UI, không phải
-                số rời: điện thoại chừa chiều cao sheet thu gọn ở đáy; desktop
-                chừa bề ngang panel, và khi panel thu gọn thì trả lại hết. */}
+            {/* Chỗ chừa cho phần điều khiển suy ra từ WATERFALL_UI, không phải
+                số rời: điện thoại chỉ chừa đúng chiều cao MỘT hàng dock (cộng
+                vùng an toàn của máy có tai thỏ); desktop chừa bề ngang panel,
+                và khi panel thu gọn thì trả lại hết. */}
             <div style={{
               position: 'absolute', top: 0, left: 0,
               right: !isMobile && panelOpen ? WFUI.PANEL_WIDTH_PX + WFUI.PANEL_GAP_PX : 0,
-              bottom: isMobile ? WFUI.SHEET_COLLAPSED_PX : 0,
+              bottom: isMobile
+                ? `calc(${WFUI.DOCK_HEIGHT_PX}px + env(safe-area-inset-bottom, 0px))`
+                : 0,
               touchAction: 'none',
             }}>
               <WaterfallCanvas />
@@ -300,7 +303,12 @@ export default function WhiteboardPage() {
               <WaterfallScrollbar bottomOffset={0} />
               <WaterfallMiniMap bottomOffset={0} />
             </div>
-          <WaterfallTools isMobile={isMobile} panelOpen={panelOpen} />
+          {/* Mở bảng cài đặt trên điện thoại thì GIẤU dock: sheet trượt lên từ
+              chính mép dưới, hai thứ chồng lên nhau ở đúng vùng đó. Sheet đã
+              có sẵn nút gửi và xoá nên không mất thao tác nào. */}
+          {isMobile
+            ? (!panelOpen && <WaterfallDock />)
+            : <WaterfallTools panelOpen={panelOpen} />}
           <WaterfallPanel onExit={() => setWaterfallActive(false)} />
         </>
       ) : (

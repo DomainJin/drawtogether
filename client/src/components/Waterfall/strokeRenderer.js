@@ -18,9 +18,16 @@ const PEN_COLOR = '#1a1a1a'
  *  destination-out, nếu nền đã tô màu thì nó khoét thủng luôn cả nền. */
 export function drawStroke(ctx, stroke, width, height) {
   const pts = stroke.points
-  if (!pts.length) return
+  if (stroke.tool !== 'fill' && !pts?.length) return
 
   ctx.save()
+
+  if (stroke.tool === 'fill') {
+    drawFill(ctx, stroke, width, height)
+    ctx.restore()
+    return
+  }
+
   ctx.lineCap = 'round'
   ctx.lineJoin = 'round'
   ctx.lineWidth = stroke.px
@@ -106,4 +113,33 @@ export function createStrokeRenderer() {
     ctx.fillRect(0, 0, width, height)
     ctx.drawImage(work, 0, 0)
   }
+}
+
+/** Vùng tô loang, vẽ từ chính các DẢI đã đóng dấu lên lưới.
+ *
+ *  Không làm mượt gì thêm: vùng tô sinh ra từ lưới van chứ không từ đường đi
+ *  của ngón tay, nên vẽ đúng biên ô là cách trung thực nhất — thấy sao thì màn
+ *  nước chạy vậy. Các dải kề nhau vẽ trong MỘT path rồi fill một lần, nếu
+ *  không sẽ lộ chỉ trắng ở mối nối do khử răng cưa.
+ *
+ *  Tô về 0 nghĩa là xoá một mảng đã vẽ — dùng destination-out như tẩy, để nó
+ *  khoét vào nét cũ thay vì phủ một mảng trắng lên trên.
+ */
+function drawFill(ctx, stroke, width, height) {
+  const runs = stroke.runs
+  if (!runs?.length) return
+  const rows = stroke.gridRows
+  const cols = stroke.gridCols
+  if (!rows || !cols) return
+
+  const cellW = width / cols
+  const cellH = height / rows
+
+  if (stroke.value === 0) ctx.globalCompositeOperation = 'destination-out'
+  ctx.fillStyle = PEN_COLOR
+  ctx.beginPath()
+  for (const { row, c0, c1 } of runs) {
+    ctx.rect(c0 * cellW, row * cellH, (c1 - c0 + 1) * cellW, cellH)
+  }
+  ctx.fill()
 }

@@ -146,3 +146,78 @@ export const backBtnStyle = {
   border: '1px solid rgba(0,0,0,0.12)', background: 'transparent',
   cursor: 'pointer', color: '#378ADD',
 }
+
+// ── Dock đáy trên điện thoại ────────────────────────────────────────────────
+// Một hàng duy nhất: vùng công cụ cuộn ngang + hai nút hành động ghim phải.
+// Xem WaterfallDock.jsx cho lý do bố cục.
+
+/** Thanh cuộn ngang của dock phải TÀNG HÌNH: nó nằm ngay dưới các nút, hiện ra
+ *  thì vừa ăn thêm vài pixel chiều cao vừa nhấp nháy mỗi lần chạm. iOS tự ẩn,
+ *  còn Chrome Android và desktop thì không — nên phải nói rõ. */
+export const HIDE_SCROLLBAR_CSS = `
+.wf-dock-scroll { scrollbar-width: none; -ms-overflow-style: none; }
+.wf-dock-scroll::-webkit-scrollbar { display: none; }
+`
+
+export const dockBarStyle = {
+  position: 'fixed', left: 0, right: 0, bottom: 0,
+  display: 'flex', alignItems: 'center', gap: UI.DOCK_GAP_PX,
+  height: UI.DOCK_HEIGHT_PX,
+  padding: `0 ${UI.DOCK_PAD_X_PX}px`,
+  paddingBottom: SAFE_BOTTOM,
+  boxSizing: 'content-box',
+  background: 'rgba(255,255,255,0.98)',
+  backdropFilter: 'blur(12px)',
+  borderTop: '1px solid rgba(0,0,0,0.08)',
+  boxShadow: '0 -2px 14px rgba(0,0,0,0.08)',
+  zIndex: 110,
+}
+
+export const dockScrollStyle = {
+  display: 'flex', alignItems: 'center', gap: UI.TOOLBAR_GROUP_GAP_PX,
+  // nowrap + overflowX là cả ý tưởng: công cụ tràn thì cuộn ngang, KHÔNG
+  // xuống dòng — xuống dòng là ăn thêm một tầng chỗ vẽ.
+  flexWrap: 'nowrap', overflowX: 'auto', overflowY: 'hidden',
+  WebkitOverflowScrolling: 'touch',
+  flex: '1 1 auto', minWidth: 0,
+  // Cuộn ngang bằng ngón tay không được để trình duyệt hiểu nhầm thành cuộn
+  // trang; dọc thì vẫn nhường cho trang.
+  touchAction: 'pan-x',
+  paddingBlock: 4,
+}
+
+/** Nút hành động ghim bên phải dock. `primary` là nút gửi (đen, nổi bật),
+ *  `ghost` là cài đặt (viền nhạt, không tranh chỗ với nút gửi). */
+export function dockActionBtnStyle({ variant, disabled }) {
+  const size = UI.DOCK_ACTION_BTN_PX
+  const base = {
+    position: 'relative',
+    width: size, height: size, flexShrink: 0, padding: 0,
+    borderRadius: 12, fontSize: 19,
+    display: 'flex', alignItems: 'center', justifyContent: 'center',
+    cursor: disabled ? 'not-allowed' : 'pointer',
+  }
+  if (variant === 'primary') {
+    return {
+      ...base,
+      border: 'none', background: '#1a1a1a', color: '#fff',
+      opacity: disabled ? 0.45 : 1,
+    }
+  }
+  return {
+    ...base,
+    border: '1.5px solid #ddd', background: 'transparent', color: '#444',
+  }
+}
+
+/** Thông báo lỗi nổi phía trên dock, không chiếm hàng riêng trong dock. Là
+ *  BUTTON để chạm vào là tắt — lỗi gửi không tự hết, để nguyên thì nó che hoạ
+ *  tiết cho tới lần gửi sau. */
+export const dockToastStyle = {
+  position: 'absolute', left: 10, right: 10, bottom: 'calc(100% + 8px)',
+  border: 'none', textAlign: 'left', cursor: 'pointer',
+  padding: '8px 12px', borderRadius: 10,
+  background: 'rgba(226,75,74,0.95)', color: '#fff',
+  fontSize: 13, lineHeight: 1.35,
+  boxShadow: '0 4px 16px rgba(0,0,0,0.18)',
+}

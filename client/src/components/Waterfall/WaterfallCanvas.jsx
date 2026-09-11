@@ -12,6 +12,11 @@ const OFF_COLOR = '#ffffff'
 const GRID_LINE = 'rgba(0,0,0,0.06)'
 const PAGE_COLOR = '#f2f2f0'
 
+/** Ngón xê dịch quá bấy nhiêu pixel thì không còn là một cú CHẠM để tô loang
+ *  nữa. Đủ rộng để tay run không huỷ mất thao tác, đủ hẹp để một cú vuốt cuộn
+ *  không bị hiểu thành chạm. */
+const FILL_TAP_SLOP_PX = 10
+
 /**
  * Vẽ hoạ tiết cho màn nước.
  *
@@ -35,6 +40,8 @@ export default function WaterfallCanvas() {
   const lastCellPointRef = useRef(null)
   /** Các ngón đang chạm — quyết định vẽ hay cuộn. */
   const pointersRef = useRef(new Map())
+  /** Cú chạm tô loang đang chờ nhấc tay, xem onPointerDown. */
+  const pendingFillRef = useRef(null)
   const panLastYRef = useRef(null)
   const gridRendererRef = useRef(null)
   const strokeRendererRef = useRef(null)
@@ -45,7 +52,7 @@ export default function WaterfallCanvas() {
 
   const {
     grid, cols, rowCount, rowIntervalMs, brushTool, brushPx, paintCells,
-    strokes, beginStroke, extendStroke, showGridPreview, setViewport,
+    strokes, beginStroke, extendStroke, showGridPreview, setViewport, fillAt,
   } = useWaterfallStore()
 
   const aspect = patternAspect({
@@ -191,11 +198,27 @@ export default function WaterfallCanvas() {
       // Ngón thứ hai đặt xuống là chuyển sang cuộn. Nét đang vẽ dừng tại đây,
       // phần đã vẽ giữ nguyên — không lặng lẽ xoá thứ người dùng vừa vạch ra.
       endStroke()
+      pendingFillRef.current = null
       panLastYRef.current = midY()
       return
     }
 
     const p = pointFromEvent(e)
+
+    // Tô loang chốt lúc NHẤC TAY, không phải lúc chạm xuống.
+    //
+    // Một cú tô loang có thể lật cả bảng vẽ trong một nhịp — chạm nhầm là mất
+    // hết. Mà ngón thứ nhất của cử chỉ cuộn hai ngón bao giờ cũng chạm xuống
+    // trước ngón thứ hai vài chục mili-giây, nên tô ngay lúc chạm thì cứ cuộn
+    // là lỡ tay tô. Chờ tới lúc nhấc, rồi chỉ tô nếu ngón đó không đi đâu và
+    // không có ngón thứ hai nào xen vào.
+    if (brushTool === 'fill') {
+      pendingFillRef.current = {
+        pointerId: e.pointerId, norm: p.norm, x: e.clientX, y: e.clientY,
+      }
+      return
+    }
+
     const { radRows, radCols } = brushRadii(brushPx, p.cellW, p.cellH)
 
     activeIndexRef.current = useWaterfallStore.getState().strokes.length
@@ -203,12 +226,20 @@ export default function WaterfallCanvas() {
     lastCellPointRef.current = p.cell
     // Bút luôn tô 1, tẩy luôn tô 0 — đồ lại lên vùng đã vẽ thì dày thêm, không xoá.
     paintCells(pointCells(p.cell, radRows, radCols), brushTool === 'eraser' ? 0 : 1)
-  }, [pointFromEvent, brushPx, brushTool, paintCells, beginStroke, endStroke])
+  }, [pointFromEvent, brushPx, brushTool, paintCells, beginStroke, endStroke, fillAt])
 
   const onPointerMove = useCallback((e) => {
     if (!pointersRef.current.has(e.pointerId)) return
     e.preventDefault()
     pointersRef.current.set(e.pointerId, { y: e.clientY })
+
+    // Ngón đã trượt quá ngưỡng thì đây là cử chỉ cuộn, không phải cú chạm tô.
+    const pending = pendingFillRef.current
+    if (pending && pending.pointerId === e.pointerId) {
+      if (Math.hypot(e.clientX - pending.x, e.clientY - pending.y) > FILL_TAP_SLOP_PX) {
+        pendingFillRef.current = null
+      }
+    }
 
     if (pointersRef.current.size > 1) {
       const y = midY()
@@ -233,11 +264,19 @@ export default function WaterfallCanvas() {
 
   const onPointerEnd = useCallback((e) => {
     pointersRef.current.delete(e.pointerId)
+
+    const pending = pendingFillRef.current
+    if (pending && pending.pointerId === e.pointerId) {
+      pendingFillRef.current = null
+      // pointercancel (trình duyệt cướp cử chỉ) không được tính là cú chạm.
+      if (e.type !== 'pointercancel' && pointersRef.current.size === 0) fillAt(pending.norm)
+    }
+
     if (pointersRef.current.size < 2) panLastYRef.current = null
     // Nhấc bớt còn một ngón thì KHÔNG vẽ tiếp: ngón còn lại đang ở giữa cử chỉ
     // cuộn, vẽ tiếp sẽ để lại một vạch không ai muốn.
     if (pointersRef.current.size === 0) endStroke()
-  }, [endStroke])
+  }, [endStroke, fillAt])
 
   return (
     <div
@@ -251,7 +290,8 @@ export default function WaterfallCanvas() {
       <canvas
         ref={canvasRef}
         style={{
-          display: 'block', cursor: 'crosshair',
+          display: 'block',
+          cursor: brushTool === 'fill' ? 'cell' : 'crosshair',
           // Nuốt cử chỉ chạm để trình duyệt không tự cuộn giữa lúc đang vẽ;
           // phần cuộn hai ngón do onPointerMove lo.
           touchAction: 'none',

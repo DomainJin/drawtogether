@@ -20,6 +20,19 @@ const stroke = (tool, y0, y1) => {
   st().paintCells(strokeCells(a, b, radRows, radCols), tool === 'pen')
 }
 
+/** Vạch ngang chắn hết bề ngang — ranh giới thật cho tô loang. Phải chạy quá
+ *  hai mép một chút, hở một cột là mực lách qua và tô cả canvas. */
+const barrier = (y) => {
+  const px = 10, radRows = 1.4, radCols = 4.2
+  st().beginStroke({ x: -0.05, y }, 'pen', px, radRows, radCols)
+  st().extendStroke({ x: 1.05, y })
+  const rows = st().rowCount, cols = st().cols
+  st().paintCells(
+    strokeCells({ col: -0.05 * cols, row: y * rows }, { col: 1.05 * cols, row: y * rows }, radRows, radCols),
+    1,
+  )
+}
+
 st().clearGrid()
 t('lưới rỗng lúc đầu', on(st().grid) === 0)
 t('redoStack rỗng lúc đầu', st().redoStack.length === 0)
@@ -66,6 +79,42 @@ st().undoStroke()
 t('undo tẩy dựng lại đúng vùng cũ', on(st().grid) === penOnly, `${on(st().grid)} vs ${penOnly}`)
 st().redoStroke()
 t('redo tẩy xoá lại đúng vùng', on(st().grid) < penOnly)
+
+// ── Tô loang nằm chung một chồng Undo với bút và tẩy ──────────────────────
+// Vùng tô phụ thuộc vào nét đã có trước nó, nên Undo một nét BÚT phía trước
+// buộc vùng tô phải tính lại — đây là chỗ dễ sai nhất của tính năng này.
+st().clearGrid()
+const cells = st().rowCount * st().cols
+
+st().fillAt({ x: 0.5, y: 0.5 })            // canvas trống → tô sạch cả lưới
+t('tô loang canvas trống bật hết van', on(st().grid) === cells, `${on(st().grid)} / ${cells}`)
+t('tô loang được ghi thành một nét', st().strokes.length === 1)
+t('nét tô loang mang dải để vẽ lại', st().strokes[0].runs.length === st().rowCount)
+
+st().fillAt({ x: 0.5, y: 0.5 })            // chạm lại → xoá cả mảng
+t('tô loang lên mảng đã vẽ xoá sạch', on(st().grid) === 0, `= ${on(st().grid)}`)
+
+st().undoStroke()
+t('undo trả lại mảng vừa xoá', on(st().grid) === cells, `${on(st().grid)} / ${cells}`)
+st().undoStroke()
+t('undo tiếp trả về lưới trống', on(st().grid) === 0)
+
+// Bút rồi tô loang: bỏ nét bút thì vùng tô phải nở ra theo (ranh giới mất đi)
+st().clearGrid()
+barrier(0.40)                              // vạch chắn ngang HẾT bề ngang canvas
+const penCells = on(st().grid)
+st().fillAt({ x: 0.5, y: 0.02 })           // tô nửa trên, bị vạch chắn lại
+const afterFill = on(st().grid)
+t('vạch bút chắn được vùng tô', afterFill < cells && afterFill > penCells,
+  `${penCells} → ${afterFill} (đầy = ${cells})`)
+
+// Bỏ nét BÚT (nét thứ nhất) bằng cách undo cả hai rồi redo riêng nét tô.
+st().undoStroke(); st().undoStroke()
+t('undo hết → lưới trống', on(st().grid) === 0)
+st().redoStroke()
+t('redo lấy lại nét bút', on(st().grid) === penCells, `${on(st().grid)} vs ${penCells}`)
+st().redoStroke()
+t('redo lấy lại đúng vùng tô cũ', on(st().grid) === afterFill, `${on(st().grid)} vs ${afterFill}`)
 
 // clearGrid dọn cả hai chồng
 st().clearGrid()

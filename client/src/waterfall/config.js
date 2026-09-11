@@ -115,16 +115,35 @@ export const WATERFALL_UI = {
   PANEL_WIDTH_PX: 280,
   /** Lề phải + khoảng hở giữa panel và canvas. */
   PANEL_GAP_PX: 32,
-  /** Chiều cao phần sheet luôn nhìn thấy khi thu gọn trên mobile. */
+  /** Chiều cao phần sheet luôn nhìn thấy khi thu gọn trên mobile.
+   *  Chỉ còn dùng cho desktop-thu-gọn và làm mốc cũ; trên điện thoại phần đáy
+   *  giờ là dock một hàng, xem DOCK_*. */
   SHEET_COLLAPSED_PX: 148,
+
+  /** Dock đáy trên điện thoại: MỘT hàng duy nhất, cuộn ngang để chọn công cụ.
+   *
+   *  Trước đây đáy màn hình là thanh trạng thái + nút "Gửi tới màn nước" cỡ
+   *  lớn + thanh công cụ hai dòng — cộng lại ngốn gần 220px, tức gần một phần
+   *  ba màn hình iPhone, trong khi thứ người dùng cần nhìn là hoạ tiết đang vẽ.
+   *  Giờ tất cả nằm trên một hàng cao DOCK_HEIGHT_PX: công cụ cuộn ngang ở
+   *  bên trái, hai nút hành động (cài đặt, gửi) ghim cứng bên phải nên không
+   *  bao giờ cuộn mất.
+   *
+   *  Cuộn ngang được nghĩa là THÊM công cụ không còn phải hy sinh chỗ vẽ —
+   *  không cần thu nhỏ nút xuống dưới ngưỡng chạm nữa. */
+  DOCK_HEIGHT_PX: 58,
+  DOCK_PAD_X_PX: 8,
+  DOCK_GAP_PX: 8,
+  /** Cạnh nút của hai nút ghim bên phải dock (cài đặt, gửi). */
+  DOCK_ACTION_BTN_PX: 44,
   /** Bề rộng thẻ điều khiển nổi khi thu gọn trên desktop. */
   COMPACT_CARD_PX: 320,
 
-  /** Cạnh nút của thanh công cụ vẽ. Mobile nhỏ hơn vì thanh phải lọt trong
-   *  92vw: ở cỡ desktop nó tràn khỏi màn hình điện thoại, nuốt mất nút Undo,
-   *  Lưới và Xoá hết. Vẫn ≥ 34px cho vừa đầu ngón tay. */
+  /** Cạnh nút của thanh công cụ vẽ. Mobile từng phải co xuống 34px để cả thanh
+   *  lọt trong 92vw; từ khi dock cuộn ngang được thì không còn ràng buộc đó,
+   *  trả về 40px cho đúng khuyến nghị vùng chạm. */
   TOOLBAR_BTN_PX: 40,
-  TOOLBAR_BTN_MOBILE_PX: 34,
+  TOOLBAR_BTN_MOBILE_PX: 40,
   /** Khoảng hở giữa các nhóm công cụ. Trên mobile thay luôn cho vạch ngăn —
    *  thanh xuống dòng được, mà vạch ngăn rơi đầu dòng thì rất xấu. */
   TOOLBAR_GROUP_GAP_PX: 8,

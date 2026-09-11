@@ -59,3 +59,34 @@ export function stampCells(grid, cells, value) {
 export function isGridEmpty(grid) {
   return grid.every((row) => row.every((v) => v === 0))
 }
+
+/** Như stampCells() nhưng nhận DẢI [c0..c1] theo hàng — dạng mà tô loang trả
+ *  về. Một lần tô có thể phủ hàng chục nghìn ô; đi theo dải thì mỗi hàng bị
+ *  chạm chỉ copy đúng một lần và phần ghi là một vòng for liền mạch.
+ *
+ *  @param {Array<{row:number,c0:number,c1:number}>} runs
+ */
+export function stampRuns(grid, runs, value) {
+  const touched = new Map()
+
+  for (const { row, c0, c1 } of runs) {
+    if (row < 0 || row >= grid.length) continue
+    const width = grid[row].length
+    const from = Math.max(0, c0)
+    const to = Math.min(width - 1, c1)
+    if (to < from) continue
+
+    let next = touched.get(row)
+    if (!next) {
+      next = grid[row].slice()
+      touched.set(row, next)
+    }
+    next.fill(value, from, to + 1)
+  }
+
+  if (touched.size === 0) return grid
+
+  const out = grid.slice()
+  for (const [row, next] of touched) out[row] = next
+  return out
+}

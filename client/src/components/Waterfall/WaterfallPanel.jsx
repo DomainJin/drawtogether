@@ -45,6 +45,12 @@ export default function WaterfallPanel({ onExit }) {
     else connect()
   }
 
+  // Trên điện thoại "thu gọn" nghĩa là BIẾN MẤT hẳn, không để lại thanh nào.
+  // Mọi thao tác thường dùng đã nằm ở dock đáy (WaterfallDock); panel này chỉ
+  // là phần cài đặt, mở bằng ⚙ rồi đóng lại, nên không có lý do chiếm chỗ vẽ
+  // lúc không dùng tới.
+  if (isMobile && !expanded) return null
+
   const sendBtn = (
     <button
       onClick={sendPattern}
@@ -107,12 +113,13 @@ export default function WaterfallPanel({ onExit }) {
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
             <strong style={{ fontSize: isMobile ? 17 : 15 }}>🌊 Màn nước</strong>
             <div style={{ display: 'flex', gap: 6 }}>
-              {!isMobile && (
-                <button onClick={togglePanel} title="Thu gọn để lấy chỗ vẽ" style={backBtnStyle}>
-                  Thu gọn →
-                </button>
-              )}
               <button onClick={onExit} title="Quay lại vẽ chung" style={backBtnStyle}>← Vẽ chung</button>
+              <button
+                onClick={togglePanel}
+                title="Đóng, lấy lại chỗ vẽ"
+                aria-label="Đóng bảng cài đặt"
+                style={backBtnStyle}
+              >{isMobile ? '✕' : 'Thu gọn →'}</button>
             </div>
           </div>
 
