@@ -1,211 +1,43 @@
 import { useEffect, useRef, useState, useCallback } from 'react'
 import { getSocket } from '../hooks/useSocket.js'
+import { ANIMATE_CONFIG as CFG, ANIMATE_UI as UI } from '../animate/config.js'
+import { getBehavior, pickRawBehavior } from '../animate/behavior.js'
+import { extractRawTexture, textureScale } from '../animate/rawSprite.js'
+import { computeSpriteBox } from '../animate/layout.js'
+import { Sprite } from '../animate/sprite.js'
 
 const SERVER_URL = import.meta.env.VITE_SERVER_URL || 'http://localhost:3001'
 
-// ── Behavior map (fallback nếu server không trả về behavior) ─────────────────
-function getBehavior(label) {
-  const l = (label || '').toLowerCase()
-  if (/fish|whale|shark|dolphin|cá|seal|octopus|tuna|clown/.test(l)) return 'swim'
-  if (/car|truck|bus|vehicle|xe|train|motorcycle|bike|tank|van|jeep/.test(l)) return 'drive'
-  if (/bird|butterfly|bee|fly|plane|airplane|dragon|kite|ufo|rocket|eagle|dove|owl/.test(l)) return 'fly'
-  if (/ball|balloon|bubble|bóng|sphere/.test(l)) return 'bounce'
-  if (/leaf|snow|rain|star|petal|snowflake|confetti/.test(l)) return 'fall'
-  if (/person|human|man|woman|boy|girl|stick|người|cat|dog|rabbit|bear|fox/.test(l)) return 'walk'
-  if (/cloud|jelly|jellyfish|ghost|feather|smoke/.test(l)) return 'float'
-  if (/flower|sun|wheel|spiral|pinwheel/.test(l)) return 'spin'
-  return 'roam'
+/** Nhớ lựa chọn bật/tắt AI giữa các phiên: người dùng tắt AI thường vì mạng
+ *  chậm hoặc hết quota, tình trạng đó không tự hết sau khi F5. */
+function loadAiPref() {
+  try {
+    const v = localStorage.getItem(CFG.AI_RENDER_STORAGE_KEY)
+    return v === null ? true : v === '1'
+  } catch { return true }
 }
 
-// ── Sprite class — SVG-based, physics tự do ───────────────────────────────────
-class Sprite {
-  constructor({ id, svgString, pixelImageData, x, y, w, h, behavior, label }) {
-    this.id = id
-    this.label = label
-    this.behavior = behavior
-    this.w = w; this.h = h
-    this.x = x; this.y = y
+/** Texture raw → PNG data URL, thu nhỏ nếu vượt trần.
+ *  Data URL chứ không phải ImageData: sprite còn phải đi qua socket cho máy
+ *  khác dựng lại, mà ImageData thì không serialize được. */
+function rawTextureToDataUrl(imageData) {
+  const tex = extractRawTexture(imageData)
+  if (!tex) return null
 
-    // Vận tốc ban đầu random — đủ mạnh để di chuyển rõ
-    const speed = behavior === 'drive' || behavior === 'swim' ? 2.5
-                : behavior === 'fly' ? 2
-                : behavior === 'bounce' ? 3.5 : 2
-    const angle = Math.random() * Math.PI * 2
-    this.vx = Math.cos(angle) * speed
-    this.vy = Math.sin(angle) * speed
+  const src = document.createElement('canvas')
+  src.width = tex.width; src.height = tex.height
+  src.getContext('2d').putImageData(new ImageData(tex.data, tex.width, tex.height), 0, 0)
 
-    this.angle = 0          // rotation hiển thị
-    this.wobble = Math.random() * Math.PI * 2
-    this.wobbleAmp = 0
+  const k = textureScale(tex.width, tex.height)
+  if (k === 1) return { url: src.toDataURL('image/png'), width: tex.width, height: tex.height }
 
-    // Tạo Image từ SVG string hoặc fallback pixel
-    this.img = new Image()
-    this.ready = false
-
-    if (svgString) {
-      // SVG → blob URL
-      const blob = new Blob([svgString], { type: 'image/svg+xml' })
-      const url = URL.createObjectURL(blob)
-      this.img.onload = () => { this.ready = true; URL.revokeObjectURL(url) }
-      this.img.src = url
-    } else if (pixelImageData) {
-      // Fallback: pixel ImageData
-      const tmp = document.createElement('canvas')
-      tmp.width = w; tmp.height = h
-      tmp.getContext('2d').putImageData(pixelImageData, 0, 0)
-      this.img.onload = () => { this.ready = true }
-      this.img.src = tmp.toDataURL()
-    }
-  }
-
-  update(W, H) {
-    this.wobble += 0.06
-
-    switch (this.behavior) {
-
-      case 'swim': {
-        this.wobbleAmp = 0.12
-        this.x += this.vx
-        this.y += this.vy * 0.4
-        // Thỉnh thoảng đổi hướng y
-        if (Math.random() < 0.008) this.vy = (Math.random() - 0.5) * 2
-        this._bounceWalls(W, H)
-        this.angle = Math.sin(this.wobble) * this.wobbleAmp
-        break
-      }
-
-      case 'drive': {
-        this.wobbleAmp = 0.03
-        // Xe chỉ di chuyển ngang, lăn bánh nhẹ
-        this.x += this.vx
-        // Thỉnh thoảng nhảy lên nhỏ
-        if (Math.random() < 0.005) this.vy = -2
-        this.vy += 0.1 // gravity nhẹ
-        this.y += this.vy
-        if (this.y + this.h > H) { this.y = H - this.h; this.vy = 0 }
-        if (this.y < 0) { this.y = 0; this.vy = Math.abs(this.vy) * 0.5 }
-        if (this.x < 0) { this.x = 0; this.vx = Math.abs(this.vx); }
-        if (this.x + this.w > W) { this.x = W - this.w; this.vx = -Math.abs(this.vx) }
-        this.angle = Math.sin(this.wobble * 0.5) * this.wobbleAmp
-        break
-      }
-
-      case 'fly': {
-        this.wobbleAmp = 0.15
-        this.x += this.vx
-        this.y += this.vy
-        // Random turbulence
-        this.vx += (Math.random() - 0.5) * 0.15
-        this.vy += (Math.random() - 0.5) * 0.15
-        // Clamp speed
-        const spd = Math.sqrt(this.vx*this.vx + this.vy*this.vy)
-        if (spd > 3.5) { this.vx = this.vx/spd*3.5; this.vy = this.vy/spd*3.5 }
-        if (spd < 1)   { this.vx *= 1.5; this.vy *= 1.5 }
-        this._bounceWalls(W, H)
-        this.angle = Math.sin(this.wobble) * this.wobbleAmp
-        break
-      }
-
-      case 'bounce': {
-        // Full gravity + bounce
-        this.vy += 0.25
-        this.x += this.vx
-        this.y += this.vy
-        this.angle = this.vx * 0.04
-        if (this.x < 0) { this.x = 0; this.vx = Math.abs(this.vx) * 0.85 }
-        if (this.x + this.w > W) { this.x = W - this.w; this.vx = -Math.abs(this.vx) * 0.85 }
-        if (this.y + this.h > H) {
-          this.y = H - this.h
-          this.vy = -Math.abs(this.vy) * 0.75
-          this.vx += (Math.random() - 0.5) * 1.5
-        }
-        if (this.y < 0) { this.y = 0; this.vy = Math.abs(this.vy) * 0.75 }
-        break
-      }
-
-      case 'fall': {
-        this.vy += 0.08
-        this.x += Math.sin(this.wobble * 0.5) * 0.6 + this.vx * 0.2
-        this.y += this.vy
-        this.angle += 0.015
-        if (this.y > H + this.h) {
-          this.y = -this.h
-          this.x = Math.random() * W
-          this.vy = 0.5 + Math.random() * 1.5
-        }
-        break
-      }
-
-      case 'walk': {
-        // Bước đi, nảy lên xuống nhịp nhàng
-        this.x += this.vx
-        this.y += H * 0.85 - this.h + Math.sin(this.wobble * 2) * 8 - this.y
-        this.y = H * 0.85 - this.h + Math.sin(this.wobble * 2) * 8
-        if (this.x < 0) { this.x = 0; this.vx = Math.abs(this.vx) }
-        if (this.x + this.w > W) { this.x = W - this.w; this.vx = -Math.abs(this.vx) }
-        this.angle = Math.sin(this.wobble) * 0.06
-        break
-      }
-
-      case 'float': {
-        // Trôi lơ lửng chậm rãi
-        this.x += Math.sin(this.wobble * 0.4) * 0.5 + this.vx * 0.15
-        this.y += Math.cos(this.wobble * 0.3) * 0.4 + this.vy * 0.1
-        this.angle = Math.sin(this.wobble * 0.5) * 0.08
-        // Wrap quanh màn hình
-        if (this.x < -this.w) this.x = W
-        if (this.x > W) this.x = -this.w
-        if (this.y < -this.h) this.y = H
-        if (this.y > H) this.y = -this.h
-        break
-      }
-
-      case 'spin': {
-        // Bay vòng tròn + xoay bản thân
-        const cx = W / 2, cy = H / 2
-        const orbitR = Math.min(W, H) * 0.3
-        this.spinAngle = (this.spinAngle || Math.atan2(this.y - cy, this.x - cx)) + 0.02
-        this.x = cx + Math.cos(this.spinAngle) * orbitR - this.w / 2
-        this.y = cy + Math.sin(this.spinAngle) * orbitR - this.h / 2
-        this.angle += 0.04
-        break
-      }
-
-      default: // 'roam' — di chuyển tự do random
-      {
-        this.x += this.vx
-        this.y += this.vy
-        this.vx += (Math.random() - 0.5) * 0.12
-        this.vy += (Math.random() - 0.5) * 0.12
-        const spd = Math.sqrt(this.vx*this.vx + this.vy*this.vy)
-        if (spd > 3) { this.vx = this.vx/spd*3; this.vy = this.vy/spd*3 }
-        if (spd < 0.8) { this.vx *= 1.3; this.vy *= 1.3 }
-        this._bounceWalls(W, H)
-        this.angle = Math.sin(this.wobble * 0.7) * 0.08
-        break
-      }
-    }
-  }
-
-  _bounceWalls(W, H) {
-    if (this.x < 0) { this.x = 0; this.vx = Math.abs(this.vx) }
-    if (this.x + this.w > W) { this.x = W - this.w; this.vx = -Math.abs(this.vx) }
-    if (this.y < 0) { this.y = 0; this.vy = Math.abs(this.vy) }
-    if (this.y + this.h > H) { this.y = H - this.h; this.vy = -Math.abs(this.vy) }
-  }
-
-  draw(ctx) {
-    if (!this.ready) return
-    ctx.save()
-    const cx = this.x + this.w / 2
-    const cy = this.y + this.h / 2
-    ctx.translate(cx, cy)
-    ctx.rotate(this.angle)
-    // Lật theo hướng đi
-    if (this.vx < -0.1) ctx.scale(-1, 1)
-    ctx.drawImage(this.img, -this.w / 2, -this.h / 2, this.w, this.h)
-    ctx.restore()
-  }
+  const out = document.createElement('canvas')
+  out.width = Math.max(1, Math.round(tex.width * k))
+  out.height = Math.max(1, Math.round(tex.height * k))
+  const octx = out.getContext('2d')
+  octx.imageSmoothingQuality = 'high'
+  octx.drawImage(src, 0, 0, out.width, out.height)
+  return { url: out.toDataURL('image/png'), width: tex.width, height: tex.height }
 }
 
 // ── Component ─────────────────────────────────────────────────────────────────
@@ -219,13 +51,22 @@ export default function AnimateOverlay({ canvasRef, camRef, containerRef }) {
   const [status, setStatus] = useState('')
   const selStart = useRef(null)
   const [spriteCount, setSpriteCount] = useState(0)
+  const [aiRender, setAiRender] = useState(loadAiPref)
+
+  // analyzeAndAnimate chạy sau một chuỗi await; đọc state qua ref để lấy đúng
+  // lựa chọn tại thời điểm thả chuột, và để listener không phải dựng lại.
+  const aiRenderRef = useRef(aiRender)
+  useEffect(() => {
+    aiRenderRef.current = aiRender
+    try { localStorage.setItem(CFG.AI_RENDER_STORAGE_KEY, aiRender ? '1' : '0') } catch {}
+  }, [aiRender])
 
   // Lắng nghe sprite từ socket và canvas event
   useEffect(() => {
     const addSprite = (data) => {
-      const { svgString, x, y, w, h, behavior, label, id } = data
+      const { svgString, imageUrl, x, y, w, h, behavior, label, id } = data
       if (spritesRef.current.find(s => s.id === id)) return
-      const sprite = new Sprite({ id, svgString, pixelImageData: null, x, y, w, h, behavior, label })
+      const sprite = new Sprite({ id, svgString, imageUrl, x, y, w, h, behavior, label })
       spritesRef.current.push(sprite)
       setSpriteCount(c => c + 1)
     }
@@ -330,7 +171,8 @@ export default function AnimateOverlay({ canvasRef, camRef, containerRef }) {
   }, [selecting, screenToCanvas])
 
   const onSelEnd = useCallback(async (e) => {
-    if (!selecting || !selBox || selBox.w < 20 || selBox.h < 20) {
+    const min = CFG.MIN_SELECTION_PX
+    if (!selecting || !selBox || selBox.w < min || selBox.h < min) {
       setSelBox(null); selStart.current = null; return
     }
     e.stopPropagation()
@@ -339,9 +181,37 @@ export default function AnimateOverlay({ canvasRef, camRef, containerRef }) {
     setSelBox(null); selStart.current = null
   }, [selecting, selBox])
 
+  /** Hỏi AI nhận diện + vẽ lại. Trả null khi hỏng — null nghĩa là rơi về sprite
+   *  raw, không bỏ luôn thao tác của người dùng. */
+  const askAi = async (base64) => {
+    setStatus('AI đang nhận diện... (có thể mất 10-30s)')
+    const res = await fetch(`${SERVER_URL}/api/animate/identify`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ imageBase64: base64 })
+    })
+    const rawText = await res.text()
+    let data
+    try {
+      data = JSON.parse(rawText)
+    } catch (e) {
+      console.error('[Animate] JSON parse error:', e, rawText)
+      setStatus('AI trả về không hợp lệ — dùng sprite raw')
+      return null
+    }
+    if (data.error) {
+      console.error('[Animate] server error:', data.error)
+      setStatus('AI lỗi, dùng sprite raw: ' + data.error)
+      return null
+    }
+    const label = data.label || 'object'
+    return { svgString: data.svg || null, label, behavior: data.behavior || getBehavior(label) }
+  }
+
   const analyzeAndAnimate = async (box) => {
     const canvas = canvasRef.current
     if (!canvas) return
+    const useAi = aiRenderRef.current
     setLoading(true)
     setStatus('Đang cắt vùng...')
 
@@ -350,90 +220,69 @@ export default function AnimateOverlay({ canvasRef, camRef, containerRef }) {
       const py = Math.max(0, Math.round(box.y))
       const pw = Math.min(Math.round(box.w), canvas.width - px)
       const ph = Math.min(Math.round(box.h), canvas.height - py)
-      if (pw < 10 || ph < 10) { setLoading(false); return }
+      if (pw < CFG.MIN_CROP_PX || ph < CFG.MIN_CROP_PX) { setLoading(false); return }
 
-      // Lấy pixel data để gửi AI
       const imageData = canvas.getContext('2d', { willReadFrequently: true }).getImageData(px, py, pw, ph)
-      const tmp = document.createElement('canvas')
-      tmp.width = pw; tmp.height = ph
-      tmp.getContext('2d').putImageData(imageData, 0, 0)
-      const base64 = tmp.toDataURL('image/png').split(',')[1]
 
-      setStatus('AI đang nhận diện... (có thể mất 10-30s)')
+      // Texture raw luôn được dựng: vừa là nội dung khi tắt AI, vừa là lưới an
+      // toàn khi AI hỏng hoặc không trả về SVG.
+      const raw = rawTextureToDataUrl(imageData)
+      if (!raw) {
+        setStatus('Vùng chọn trống — chưa có nét nào')
+        setLoading(false)
+        setTimeout(() => setStatus(''), 2500)
+        return
+      }
 
-      const res = await fetch(`${SERVER_URL}/api/animate/identify`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ imageBase64: base64 })
+      let svgString = null
+      let label = 'sprite raw'
+      let behavior = pickRawBehavior()
+
+      if (useAi) {
+        const tmp = document.createElement('canvas')
+        tmp.width = pw; tmp.height = ph
+        tmp.getContext('2d').putImageData(imageData, 0, 0)
+        const base64 = tmp.toDataURL('image/png').split(',')[1]
+        const ai = await askAi(base64)
+        if (ai) {
+          label = ai.label
+          behavior = ai.behavior
+          svgString = ai.svgString
+          setStatus(`"${label}" → ${behavior} ✨`)
+        }
+      } else {
+        setStatus(`Sprite raw → ${behavior} 🪁`)
+      }
+
+      // Tỉ lệ lấy từ texture đã cắt sát mực, không phải từ khung người dùng
+      // kéo: kéo rộng tay thì sprite mang theo lề trắng và va tường bằng
+      // khoảng không. Với SVG do AI vẽ lại thì khung gốc mới đúng tỉ lệ.
+      const srcW = svgString ? pw : raw.width
+      const srcH = svgString ? ph : raw.height
+      const spriteBox = computeSpriteBox({
+        cropW: srcW, cropH: srcH,
+        zoom: camRef.current.zoom,
+        viewportW: window.innerWidth,
+        viewportH: window.innerHeight,
       })
 
-      const rawText = await res.text()
-      console.log('[Animate] raw server response:', rawText)
-
-      let data
-      try {
-        data = JSON.parse(rawText)
-      } catch(e) {
-        console.error('[Animate] JSON parse error:', e)
-        setStatus('Lỗi parse response')
-        setLoading(false)
-        return
-      }
-
-      console.log('[Animate] parsed:', data)
-
-      if (data.error) {
-        setStatus('Server lỗi: ' + data.error)
-        setLoading(false)
-        return
-      }
-
-      const label = data.label || 'object'
-      const behavior = data.behavior || getBehavior(label)
-      const svgString = data.svg || null
-
-      console.log('[Animate] FINAL → label:', label, '| behavior:', behavior, '| hasSVG:', !!svgString)
-      setStatus(`"${label}" → ${behavior} ✨`)
-
-      // Kích thước sprite trên màn hình
-      const zoom = camRef.current.zoom
-      const dispW = pw * zoom
-      const dispH = ph * zoom
-
-      // Scale lên cho dễ thấy (min 80px)
-      const scale = Math.max(1, 80 / Math.min(dispW, dispH))
-      const spriteW = dispW * scale
-      const spriteH = dispH * scale
-
-      // Vị trí ban đầu: ở giữa màn hình
-      const startX = window.innerWidth / 2 - spriteW / 2
-      const startY = window.innerHeight / 2 - spriteH / 2
-
-      const sprite = new Sprite({
+      const payload = {
         id: Date.now(),
         svgString,
-        pixelImageData: svgString ? null : imageData,
-        x: startX, y: startY,
-        w: spriteW, h: spriteH,
+        imageUrl: svgString ? null : raw.url,
+        x: spriteBox.x, y: spriteBox.y,
+        w: spriteBox.w, h: spriteBox.h,
         behavior, label,
-      })
+      }
+
       // Emit lên server — server broadcast lại cho TẤT CẢ kể cả mình
       const socket = getSocket()
-      console.log('[Animate] emitting sprite:add, socket:', socket?.id, 'connected:', socket?.connected)
       if (socket && socket.connected) {
-        const spritePayload = {
-          id: sprite.id,
-          svgString,
-          x: startX, y: startY,
-          w: spriteW, h: spriteH,
-          behavior, label,
-        }
-        socket.emit('sprite:add', spritePayload)
-        console.log('[Animate] sprite:add emitted:', label, behavior)
+        socket.emit('sprite:add', payload)
       } else {
         // Fallback: add local nếu không có socket
         console.warn('[Animate] no socket, adding locally')
-        spritesRef.current.push(sprite)
+        spritesRef.current.push(new Sprite(payload))
         setSpriteCount(c => c + 1)
       }
 
@@ -466,28 +315,63 @@ export default function AnimateOverlay({ canvasRef, camRef, containerRef }) {
     return { left: tl.sx, top: tl.sy, width: br.sx - tl.sx, height: br.sy - tl.sy }
   })() : null
 
+  const btnBase = {
+    position: 'fixed', bottom: UI.BOTTOM_PX, zIndex: UI.Z_BUTTONS,
+    height: UI.BTN_HEIGHT_PX, borderRadius: 8,
+    cursor: 'pointer', fontSize: 13, fontWeight: 600,
+    display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6,
+    boxShadow: '0 2px 8px rgba(0,0,0,0.1)',
+    transition: 'all 0.15s',
+  }
+
   return (
     <>
       {/* Sprite animation canvas — fixed, toàn màn hình */}
       <canvas ref={overlayRef} style={{
-        position: 'fixed', inset: 0, pointerEvents: 'none', zIndex: 50,
+        position: 'fixed', inset: 0, pointerEvents: 'none', zIndex: UI.Z_SPRITE_LAYER,
       }} />
 
       {/* Animate button */}
       <button
         onClick={() => { setSelecting(s => !s); setSelBox(null) }}
         style={{
-          position: 'fixed', bottom: 90, left: 58, zIndex: 300,
-          height: 34, padding: '0 12px', borderRadius: 8,
+          ...btnBase,
+          left: UI.ANIMATE_LEFT_PX, width: UI.ANIMATE_WIDTH_PX,
           background: selecting ? '#1a1a1a' : 'rgba(255,255,255,0.95)',
           color: selecting ? '#fff' : '#1a1a1a',
           border: `1.5px solid ${selecting ? '#1a1a1a' : 'rgba(0,0,0,0.15)'}`,
-          cursor: 'pointer', fontSize: 13, fontWeight: 600,
-          display: 'flex', alignItems: 'center', gap: 6,
-          boxShadow: '0 2px 8px rgba(0,0,0,0.1)',
-          transition: 'all 0.15s',
         }}
       >✨ {selecting ? 'Kéo chọn...' : 'Animate'}</button>
+
+      {/* Toggle AI render — tắt thì bỏ hẳn vòng gọi AI, hình vẽ bay lượn
+          nguyên nét tay. Nhanh, không cần mạng, giữ đúng nét người vẽ. */}
+      <button
+        onClick={() => setAiRender(v => !v)}
+        title={aiRender
+          ? 'AI đang BẬT — AI nhận diện và vẽ lại hình trước khi cho bay'
+          : 'AI đang TẮT — hình vẽ bay lượn nguyên nét tay (sprite raw)'}
+        style={{
+          ...btnBase,
+          left: UI.AI_TOGGLE_LEFT_PX, width: UI.AI_TOGGLE_WIDTH_PX,
+          gap: 5, fontSize: 12,
+          background: aiRender ? 'rgba(55,138,221,0.12)' : 'rgba(255,255,255,0.95)',
+          color: aiRender ? '#1F6FB8' : '#8A8A8A',
+          border: `1.5px solid ${aiRender ? '#378ADD' : 'rgba(0,0,0,0.15)'}`,
+        }}
+      >
+        <span style={{
+          width: 26, height: 14, borderRadius: 7, flexShrink: 0,
+          background: aiRender ? '#378ADD' : 'rgba(0,0,0,0.22)',
+          position: 'relative', transition: 'background 0.15s',
+        }}>
+          <span style={{
+            position: 'absolute', top: 2, left: aiRender ? 14 : 2,
+            width: 10, height: 10, borderRadius: '50%', background: '#fff',
+            transition: 'left 0.15s',
+          }} />
+        </span>
+        AI
+      </button>
 
       {spriteCount > 0 && (
         <button
@@ -502,11 +386,11 @@ export default function AnimateOverlay({ canvasRef, camRef, containerRef }) {
           }
         }}
           style={{
-            position: 'fixed', bottom: 90, left: 174, zIndex: 300,
-            height: 34, padding: '0 10px', borderRadius: 8,
+            ...btnBase,
+            left: UI.CLEAR_LEFT_PX, padding: '0 10px',
             background: 'rgba(255,255,255,0.95)',
             border: '1px solid rgba(0,0,0,0.12)',
-            cursor: 'pointer', fontSize: 12, color: '#E24B4A',
+            fontSize: 12, fontWeight: 500, color: '#E24B4A',
           }}
         >🗑 {spriteCount}</button>
       )}
@@ -514,7 +398,7 @@ export default function AnimateOverlay({ canvasRef, camRef, containerRef }) {
       {/* Selection overlay */}
       {selecting && (
         <div
-          style={{ position: 'fixed', inset: 0, zIndex: 250, cursor: 'crosshair' }}
+          style={{ position: 'fixed', inset: 0, zIndex: UI.Z_SELECTION, cursor: 'crosshair' }}
           onMouseDown={onSelStart} onMouseMove={onSelMove} onMouseUp={onSelEnd}
           onTouchStart={onSelStart} onTouchMove={onSelMove} onTouchEnd={onSelEnd}
         >
@@ -526,7 +410,9 @@ export default function AnimateOverlay({ canvasRef, camRef, containerRef }) {
             padding: '10px 20px', borderRadius: 12,
             fontSize: 14, pointerEvents: 'none', whiteSpace: 'nowrap',
           }}>
-            ✏️ Kéo để bao quanh hình vẽ → AI vẽ lại + animate
+            {aiRender
+              ? '✏️ Kéo để bao quanh hình vẽ → AI vẽ lại + animate'
+              : '✏️ Kéo để bao quanh hình vẽ → bay lượn nguyên nét tay'}
           </div>
           {selScreen && selScreen.width > 5 && (
             <div style={{
@@ -547,7 +433,7 @@ export default function AnimateOverlay({ canvasRef, camRef, containerRef }) {
           position: 'fixed', top: 60, left: '50%', transform: 'translateX(-50%)',
           background: 'rgba(0,0,0,0.82)', color: '#fff',
           padding: '8px 20px', borderRadius: 20,
-          fontSize: 13, zIndex: 400,
+          fontSize: 13, zIndex: UI.Z_TOAST,
           display: 'flex', alignItems: 'center', gap: 8,
           boxShadow: '0 4px 20px rgba(0,0,0,0.3)',
         }}>
