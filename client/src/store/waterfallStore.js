@@ -4,15 +4,51 @@ import { createEmptyGrid, resizeGrid, setCell as setCellPure, stampCells, stampR
 import { floodFillRuns } from '../waterfall/fill.js'
 import { rebuildGrid } from '../waterfall/strokeReplay.js'
 import { ValveSocket, SOCKET_STATUS } from '../waterfall/valveSocket.js'
-import { buildAnimationFrames, gridToOpenValveRows } from '../waterfall/valveCodec.js'
+import { buildPatternTimeline, framesForRepeats, gridToOpenValveRows } from '../waterfall/valveCodec.js'
 import { cmdAllOff, cmdGetConfig } from '../waterfall/commands.js'
 import { sendFramesViaBridge, sendCmdViaBridge, isBridgeSocketReady } from '../waterfall/bridgeTransport.js'
+import {
+  PLAY_MODES, normalizePlayMode, nextPlayMode, repeatsForMode,
+  repeatsPerBurst, nextBurstRepeats, burstWaitMs,
+} from '../waterfall/playback.js'
 
 let directSocket = null
 
 const LS_IP_KEY = 'wb_waterfall_ip'
 const LS_PORT_KEY = 'wb_waterfall_port'
 const LS_MODE_KEY = 'wb_waterfall_mode'
+const LS_PLAY_MODE_KEY = 'wb_waterfall_play_mode'
+
+/** Lượt chạy hiện tại. Token tăng lên là mọi thứ đang chạy dở tự hiểu mình đã
+ *  bị huỷ — cần thiết vì một lượt lặp vô tận sống qua nhiều lần await, không
+ *  dừng được bằng một biến boolean mà chính nó vừa đọc trước khi await. */
+let playToken = 0
+let playTimer = null
+
+function clearPlayTimer() {
+  if (playTimer) { clearTimeout(playTimer); playTimer = null }
+}
+
+/** Chờ có huỷ ngang. Trả false nếu lượt chạy đã bị huỷ trong lúc chờ. */
+function waitForToken(ms, token) {
+  return new Promise((resolve) => {
+    clearPlayTimer()
+    playTimer = setTimeout(() => {
+      playTimer = null
+      resolve(playToken === token)
+    }, ms)
+  })
+}
+
+async function sendFramesVia(transportMode, frames) {
+  if (transportMode === 'bridge') {
+    await sendFramesViaBridge(frames)
+    return
+  }
+  for (const frame of frames) {
+    if (!directSocket?.sendBinary(frame)) throw new Error('Mất kết nối khi đang gửi')
+  }
+}
 
 function loadSaved(key, fallback) {
   try {
@@ -43,8 +79,15 @@ export const useWaterfallStore = create((set, get) => ({
   setPanelOpen: (panelOpen) => set({ panelOpen }),
   togglePanel: () => set((s) => ({ panelOpen: !s.panelOpen })),
 
-  setActive: (active) => set({ active }),
-  toggleActive: () => set((s) => ({ active: !s.active })),
+  /** Rời khu vực Màn nước thì dừng lượt đang chạy.
+   *
+   *  Nút Dừng nằm trong panel màn nước; ra ngoài mà lượt lặp vô tận vẫn chạy
+   *  thì app cứ bơm frame tiếp mà người dùng không còn chỗ nào để tắt. */
+  setActive: (active) => {
+    if (!active && get().playing) get().stopPlayback()
+    set({ active })
+  },
+  toggleActive: () => get().setActive(!get().active),
 
   transportMode: savedMode === 'direct' ? 'direct' : 'bridge',
   setTransportMode: (transportMode) => {
@@ -273,8 +316,42 @@ export const useWaterfallStore = create((set, get) => ({
     }
   },
 
+  // ── Chế độ chạy ────────────────────────────────────────────────────────────
+  /** mặc định (10 vòng) | single (1 vòng) | loop (vô tận). Xem playback.js. */
+  playMode: normalizePlayMode(loadSaved(LS_PLAY_MODE_KEY, PLAY_MODES.DEFAULT)),
+  setPlayMode: (mode) => {
+    const playMode = normalizePlayMode(mode)
+    saveLocal(LS_PLAY_MODE_KEY, playMode)
+    set({ playMode })
+  },
+  cyclePlayMode: () => get().setPlayMode(nextPlayMode(get().playMode)),
+
+  /** Một lượt chạy đang diễn ra (có thể kéo dài qua nhiều burst). */
+  playing: false,
+  playDone: 0,
+  playTotal: 0,
+
+  /** Dừng lượt chạy và đóng van.
+   *
+   *  Đóng van là bắt buộc chứ không phải lịch sự: dừng giữa chừng nghĩa là
+   *  frame tắt-hết ở cuối hoạ tiết không bao giờ tới, van đang mở sẽ mở mãi. */
+  stopPlayback: async ({ closeValves = true } = {}) => {
+    playToken++
+    clearPlayTimer()
+    set({ playing: false, sending: false, playDone: 0, playTotal: 0 })
+    if (closeValves) await get().allOff()
+  },
+
   sendPattern: async () => {
-    const { grid, rowIntervalMs, valveCount, cols, transportMode, status, bridgeOnline } = get()
+    const {
+      grid, rowIntervalMs, valveCount, cols,
+      transportMode, status, bridgeOnline, playMode, playing,
+    } = get()
+
+    // Đang chạy thì nút đã đổi thành Dừng; chặn ở đây để phím tắt hay lần chạm
+    // thứ hai không chồng hai lượt lên nhau (hai lượt = hai timeline cùng gửi,
+    // thiết bị nhận reset loạn xạ).
+    if (playing) return
 
     // Chế độ bridge cần CẢ hai: socket tới server còn sống và có bridge online.
     // Chỉ tin mỗi bridgeOnline là sai — cờ đó do server đẩy xuống từ trước, nó
@@ -293,23 +370,52 @@ export const useWaterfallStore = create((set, get) => ({
     }
 
     const effectiveValveCount = valveCount ?? cols
-    set({ sending: true, sendError: null })
-    try {
-      const rows = gridToOpenValveRows(grid, CFG.EMIT_BOTTOM_ROW_FIRST)
-      const frames = buildAnimationFrames(rows, rowIntervalMs, effectiveValveCount, CFG.TRIM_EMPTY_ROWS)
+    const rows = gridToOpenValveRows(grid, CFG.EMIT_BOTTOM_ROW_FIRST)
 
-      if (transportMode === 'bridge') {
-        await sendFramesViaBridge(frames)
-      } else {
-        for (const frame of frames) {
-          if (!directSocket.sendBinary(frame)) throw new Error('Mất kết nối khi đang gửi')
-        }
+    // Hoạ tiết được CHỤP tại thời điểm bấm Gửi: vẽ thêm trong lúc chế độ lặp
+    // đang chạy không làm đổi thứ đang chảy, phải bấm Gửi lại. Cố ý — nét đang
+    // vẽ dở mà tự động bay ra màn nước thì không ai kiểm soát được kết quả.
+    //
+    // Dựng bit MỘT lần cho cả lượt chạy: mỗi vòng sau chỉ là cùng bộ bit đó dời
+    // mốc thời gian, không tính lại. Vòng gửi burst vì thế chỉ còn việc đóng
+    // gói và chờ — không có tính toán nặng xen vào giữa hai burst.
+    const timeline = buildPatternTimeline(rows, rowIntervalMs, effectiveValveCount, CFG.TRIM_EMPTY_ROWS)
+    const total = repeatsForMode(playMode)
+    const perBurst = repeatsPerBurst(timeline.cycle.length, timeline.cycleMs)
+
+    const token = ++playToken
+    clearPlayTimer()
+    set({ playing: true, playDone: 0, playTotal: total, sendError: null })
+
+    let done = 0
+    try {
+      while (playToken === token && done < total) {
+        const reps = nextBurstRepeats(total - done, perBurst)
+        set({ sending: true })
+        await sendFramesVia(transportMode, framesForRepeats(timeline, reps))
+        if (playToken !== token) break
+
+        done += reps
+        set({ sending: false, lastSentAt: Date.now(), playDone: done })
+
+        // Lưới trống trơn: chỉ có một frame tắt, không có vòng nào để chờ hết.
+        // Không chặn ở đây thì chế độ lặp quay vòng 0ms và treo trình duyệt.
+        if (timeline.cycleMs === 0) break
+
+        // Chờ cả burst CUỐI chạy xong rồi mới kết thúc lượt: trạng thái "đang
+        // chạy" trên giao diện khớp với thứ đang chảy ngoài màn nước, và nút
+        // Dừng còn đó suốt thời gian ấy.
+        if (!(await waitForToken(burstWaitMs(reps, timeline.cycleMs), token))) return
       }
-      set({ lastSentAt: Date.now() })
     } catch (err) {
+      // Hỏng thì dừng hẳn, kể cả chế độ lặp: lặp vô tận trên một lỗi lặp lại
+      // chỉ tạo ra một vòng spam, không cứu được lượt gửi.
       set({ sendError: String(err.message || err) })
     } finally {
-      set({ sending: false })
+      if (playToken === token) {
+        clearPlayTimer()
+        set({ playing: false, sending: false })
+      }
     }
   },
 }))

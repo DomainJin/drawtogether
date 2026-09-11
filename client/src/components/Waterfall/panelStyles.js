@@ -147,9 +147,16 @@ export const backBtnStyle = {
   cursor: 'pointer', color: '#378ADD',
 }
 
+/** Khung bọc một dãy tab dính liền (nguồn gửi, chế độ chạy). Tách ra vì hai
+ *  dãy phải trông giống hệt nhau — trước đây khung này gõ thẳng trong panel,
+ *  thêm dãy thứ hai là bắt đầu lệch viền. */
+export const segmentRowStyle = {
+  display: 'flex', borderRadius: 10, overflow: 'hidden', border: '1.5px solid #ddd',
+}
+
 // ── Dock đáy trên điện thoại ────────────────────────────────────────────────
-// Một hàng duy nhất: vùng công cụ cuộn ngang + hai nút hành động ghim phải.
-// Xem WaterfallDock.jsx cho lý do bố cục.
+// Một hàng duy nhất: vùng công cụ cuộn ngang + cụm hành động ghim phải (cài
+// đặt, chế độ chạy, gửi). Xem WaterfallDock.jsx cho lý do bố cục.
 
 /** Thanh cuộn ngang của dock phải TÀNG HÌNH: nó nằm ngay dưới các nút, hiện ra
  *  thì vừa ăn thêm vài pixel chiều cao vừa nhấp nháy mỗi lần chạm. iOS tự ẩn,
@@ -207,6 +214,21 @@ export function dockActionBtnStyle({ variant, disabled }) {
   return {
     ...base,
     border: '1.5px solid #ddd', background: 'transparent', color: '#444',
+  }
+}
+
+/** Nút chế độ chạy trên dock: hẹp hơn nút hành động vì nó chỉ hiện một nhãn
+ *  ngắn ("10×", "1×", "∞"), và không được lấn chỗ của nút gửi. */
+export function dockModeBtnStyle(active) {
+  return {
+    position: 'relative', flexShrink: 0, padding: '0 8px',
+    minWidth: UI.DOCK_MODE_BTN_PX, height: UI.DOCK_ACTION_BTN_PX,
+    borderRadius: 12, fontSize: 15, fontWeight: 700,
+    display: 'flex', alignItems: 'center', justifyContent: 'center',
+    cursor: 'pointer',
+    border: `1.5px solid ${active ? '#378ADD' : '#ddd'}`,
+    background: active ? 'rgba(55,138,221,0.12)' : 'transparent',
+    color: active ? '#1F6FB8' : '#444',
   }
 }
 

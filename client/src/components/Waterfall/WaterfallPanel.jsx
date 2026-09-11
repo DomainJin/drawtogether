@@ -2,11 +2,12 @@ import { useWaterfallStore } from '../../store/waterfallStore.js'
 import { WATERFALL_CONFIG as CFG } from '../../waterfall/config.js'
 import { SOCKET_STATUS } from '../../waterfall/valveSocket.js'
 import { useWaterfallPanel } from './useWaterfallPanel.js'
+import { PLAY_MODE_ORDER, PLAY_MODE_META, playProgressLabel } from '../../waterfall/playback.js'
 import {
   backBtnStyle, collapsedBarStyle, collapsedStatusRowStyle, dangerBtnStyle,
   dotStyle, grabberStyle, grabberWrapStyle, inputStyle, modeTabStyle,
-  panelStyle, primaryBtnStyle, rangeStyle, secondaryBtnStyle, sendRowStyle,
-  sheetBodyStyle,
+  panelStyle, primaryBtnStyle, rangeStyle, secondaryBtnStyle, segmentRowStyle,
+  sendRowStyle, sheetBodyStyle,
 } from './panelStyles.js'
 
 const STATUS_LABEL = {
@@ -31,6 +32,7 @@ export default function WaterfallPanel({ onExit }) {
     rowCount, rowIntervalMs, setRowCount, setRowIntervalMs,
     clearGrid, allOff, sendPattern, sending, sendError, lastSentAt,
     cols,
+    playMode, setPlayMode, playing, playDone, playTotal, stopPlayback,
   } = useWaterfallStore()
 
   const { isMobile, expanded, togglePanel } = useWaterfallPanel()
@@ -38,7 +40,7 @@ export default function WaterfallPanel({ onExit }) {
   const isBridge = transportMode === 'bridge'
   const connected = isBridge ? bridgeOnline : status === SOCKET_STATUS.CONNECTED
   const deviceReady = isBridge ? (bridgeOnline && status === SOCKET_STATUS.CONNECTED) : connected
-  const canSend = connected && !sending
+  const canSend = connected && !sending && !playing
 
   const handleConnectToggle = () => {
     if (status === SOCKET_STATUS.CONNECTED || status === SOCKET_STATUS.CONNECTING) disconnect()
@@ -51,7 +53,16 @@ export default function WaterfallPanel({ onExit }) {
   // lúc không dùng tới.
   if (isMobile && !expanded) return null
 
-  const sendBtn = (
+  // Đang chạy thì chính nút đó thành nút Dừng: chế độ lặp vô tận không có điểm
+  // kết thúc, phải luôn nhìn thấy đường tắt ở đúng chỗ vừa bấm để bật.
+  const sendBtn = playing ? (
+    <button
+      onClick={() => stopPlayback()}
+      style={{ ...dangerBtnStyle(isMobile), flex: 1 }}
+    >
+      ⏹ Dừng — {playProgressLabel(playDone, playTotal)}
+    </button>
+  ) : (
     <button
       onClick={sendPattern}
       disabled={!canSend}
@@ -60,8 +71,31 @@ export default function WaterfallPanel({ onExit }) {
         opacity: canSend ? 1 : 0.5, cursor: canSend ? 'pointer' : 'not-allowed',
       }}
     >
-      {sending ? 'Đang gửi...' : '🌊 Gửi tới màn nước'}
+      {sending ? 'Đang gửi...' : `🌊 Gửi tới màn nước · ${PLAY_MODE_META[playMode].short}`}
     </button>
+  )
+
+  const playModeTabs = (
+    <div style={segmentRowStyle}>
+      {PLAY_MODE_ORDER.map((mode) => (
+        <button
+          key={mode}
+          onClick={() => setPlayMode(mode)}
+          disabled={playing}
+          title={PLAY_MODE_META[mode].hint}
+          style={{
+            ...modeTabStyle(playMode === mode, isMobile),
+            // Đổi chế độ giữa chừng không đổi được lượt đang chạy (số vòng đã
+            // chốt lúc bấm Gửi), nên khoá lại thay vì để nó trông như có tác
+            // dụng ngay.
+            opacity: playing && playMode !== mode ? 0.45 : 1,
+            cursor: playing ? 'not-allowed' : 'pointer',
+          }}
+        >
+          {PLAY_MODE_META[mode].label} {PLAY_MODE_META[mode].short}
+        </button>
+      ))}
+    </div>
   )
 
   return (
@@ -124,7 +158,7 @@ export default function WaterfallPanel({ onExit }) {
           </div>
 
           <Section title="Kết nối tới thiết bị">
-            <div style={{ display: 'flex', borderRadius: 10, overflow: 'hidden', border: '1.5px solid #ddd' }}>
+            <div style={segmentRowStyle}>
               <button onClick={() => setTransportMode('bridge')} style={modeTabStyle(isBridge, isMobile)}>
                 Qua server
               </button>
@@ -220,6 +254,8 @@ export default function WaterfallPanel({ onExit }) {
           </Section>
 
           <Section title="Gửi" last>
+            {playModeTabs}
+            <Note color="#999">{PLAY_MODE_META[playMode].hint}</Note>
             <div style={sendRowStyle}>{sendBtn}</div>
             <button
               onClick={allOff}

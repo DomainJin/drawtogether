@@ -101,6 +101,35 @@ export const WATERFALL_CONFIG = {
    *  "too many attachments" và ĐÓNG LUÔN kết nối — client chỉ thấy
    *  "transport close" chứ không nhận được lỗi nào. Để 8 cho có biên an toàn. */
   MAX_FRAMES_PER_PACKET: 8,
+
+  // ── Chế độ chạy khi bấm Gửi ───────────────────────────────────────────────
+  /** Số vòng của chế độ "Mặc định".
+   *
+   *  Một hoạ tiết 256 hàng ở nhịp 16ms chỉ dài 4,1 giây — bấm Gửi xong người
+   *  đứng xem chưa kịp quay sang màn nước thì đã hết. Chạy 10 vòng cho đủ thời
+   *  gian nhìn mà vẫn tự dừng, không phải chạy ra tắt tay như chế độ lặp. */
+  DEFAULT_PLAY_REPEATS: 10,
+
+  /** Trần số frame cho MỘT lần gửi (một burst).
+   *
+   *  Lặp nhiều vòng = nhiều frame hơn, và cả đống đó phải nằm vừa bộ đệm của
+   *  firmware lẫn đường truyền. Giữ ngang mức một hoạ tiết dài nhất mà app vẫn
+   *  gửi được hôm nay (256 hàng → tối đa 256 frame đổi trạng thái): đã chạy
+   *  thật ở mức này rồi thì lặp vòng không đẩy thiết bị vào vùng chưa ai thử.
+   *  Vượt trần thì playback cắt thành nhiều burst gửi nối tiếp nhau. */
+  MAX_FRAMES_PER_SEND: 256,
+
+  /** Gửi burst kế tiếp SỚM hơn thời điểm burst hiện tại chạy hết bấy nhiêu ms.
+   *
+   *  Đánh đổi hai chiều, nên để thành số chỉnh được thay vì chôn trong code:
+   *   - 0: không cắt mất đuôi hoạ tiết, nhưng giữa hai burst có một quãng tối
+   *     đúng bằng độ trễ mạng (đo trên Railway ~300ms).
+   *   - >0: bù độ trễ cho hai burst nối liền nhau, nhưng frame RESET của burst
+   *     sau tới sớm sẽ cắt cụt bấy nhiêu ms cuối của burst trước.
+   *  Để 0 cho tới khi đo được độ trễ thật trên giàn: mất nội dung khó phát
+   *  hiện hơn một quãng tối. Chỉ có ý nghĩa khi hoạ tiết dài quá một burst
+   *  hoặc đang chạy chế độ lặp vô tận. */
+  BURST_SEND_LEAD_MS: 0,
 }
 
 /** Kích thước layout của khu vực Màn nước.
@@ -136,6 +165,10 @@ export const WATERFALL_UI = {
   DOCK_GAP_PX: 8,
   /** Cạnh nút của hai nút ghim bên phải dock (cài đặt, gửi). */
   DOCK_ACTION_BTN_PX: 44,
+  /** Bề ngang nút chế độ chạy (10× / 1× / ∞) — nút thứ ba trong cụm ghim phải.
+   *  Hẹp hơn hai nút kia vì chỉ mang một nhãn ngắn, và mỗi pixel lấy thêm ở
+   *  đây là một pixel mất khỏi vùng cuộn công cụ. Xem dock-fit.test.mjs. */
+  DOCK_MODE_BTN_PX: 40,
   /** Bề rộng thẻ điều khiển nổi khi thu gọn trên desktop. */
   COMPACT_CARD_PX: 320,
 

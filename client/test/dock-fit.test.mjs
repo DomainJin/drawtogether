@@ -16,7 +16,7 @@
 import { WATERFALL_CONFIG as CFG, WATERFALL_UI as UI } from '../src/waterfall/config.js'
 
 const ITEM_GAP = 4      // gap trong một nhóm (WaterfallToolRow)
-const ACTION_GAP = 6    // gap giữa ⚙ và 🌊 (WaterfallDock)
+const ACTION_GAP = 6    // gap giữa ⚙, nút chế độ và 🌊 (WaterfallDock)
 const ACTION_PAD = 7    // paddingLeft 6 + vạch ngăn 1
 
 let fails = 0
@@ -38,8 +38,9 @@ const groups = [
 const toolsWidth = groups.reduce((w, [, g]) => w + g, 0)
   + (groups.length - 1) * UI.TOOLBAR_GROUP_GAP_PX
 
-/** Bề ngang cụm hành động ghim phải: ⚙ + 🌊. */
-const actionsWidth = 2 * UI.DOCK_ACTION_BTN_PX + ACTION_GAP + ACTION_PAD
+/** Bề ngang cụm hành động ghim phải: ⚙ + nút chế độ chạy + 🌊. */
+const actionsWidth =
+  2 * UI.DOCK_ACTION_BTN_PX + UI.DOCK_MODE_BTN_PX + 2 * ACTION_GAP + ACTION_PAD
 
 /** Bề ngang còn lại cho vùng cuộn trên màn rộng `vw`. */
 const scrollWidth = (vw) =>
@@ -57,8 +58,10 @@ t('dock chiếm dưới 12% chiều cao màn hình 667px',
 t('nút công cụ đủ to để chạm (≥ 40px)', btn >= 40, `= ${btn}px`)
 t('nút hành động đủ to để chạm (≥ 44px)',
   UI.DOCK_ACTION_BTN_PX >= 44, `= ${UI.DOCK_ACTION_BTN_PX}px`)
-t('nút gửi và ⚙ chỉ chiếm dưới nửa màn 320px',
+t('cụm ⚙ + chế độ + gửi chỉ chiếm dưới nửa màn 320px',
   actionsWidth < 320 / 2, `= ${actionsWidth}px`)
+t('nút chế độ chạy vẫn đủ rộng để chạm (≥ 40px)',
+  UI.DOCK_MODE_BTN_PX >= 40, `= ${UI.DOCK_MODE_BTN_PX}px`)
 
 // ── 3. Vùng cuộn ──────────────────────────────────────────────────────────
 for (const vw of [320, 360, 390, 430]) {
