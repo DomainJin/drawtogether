@@ -14,9 +14,44 @@
 
 import { WATERFALL_CONFIG as CFG } from '../../waterfall/config.js'
 import { runsToShapes } from '../../waterfall/runGeometry.js'
+import { floodFillPixels } from '../../waterfall/pixelFill.js'
+import { runsCellCount } from '../../waterfall/fill.js'
 import { addShapesToPath } from './runsPath.js'
 
 const PEN_COLOR = '#1a1a1a'
+const PEN_RGB = [26, 26, 26]
+
+/** Trần số pixel cho một lần tô ở không gian màn hình.
+ *
+ *  Hoạ tiết ở nhịp rơi chậm nhất cao tới ~6800px CSS; nhân với bề ngang là đệm
+ *  RGBA vài chục MB cho MỖI lần tô, mà dựng lại canvas (đổi cỡ, undo) thì mọi
+ *  nét tô cùng chạy lại. Vượt trần thì quay về vẽ từ lưới: hơi hụt ở biên,
+ *  nhưng không làm nghẽn máy. */
+const MAX_FILL_PIXELS = 12e6
+
+/** Vùng tô trên MÀN được phép rộng hơn vùng tô trên LƯỚI bao nhiêu lần.
+ *
+ *  Hai bên lệch nhau là chuyện bình thường và có chủ ý: lưới làm tròn dấu chân
+ *  nét ra ngoài cả một ô, nên vùng tô trên lưới dừng sớm hơn, còn trên màn thì
+ *  ăn sát nét. Phần chênh là một vành mỏng quanh chu vi, thường dưới một phần
+ *  ba diện tích.
+ *
+ *  Nhưng có một trường hợp lệch tai hại: hình vẽ hở một khe NHỎ HƠN một ô.
+ *  Trên lưới, dấu chân béo của nét bịt kín khe đó nên mực nằm yên trong hình;
+ *  trên màn, đường vector mảnh hơn nên mực chảy ra và nhuộm đen cả bản vẽ —
+ *  trong khi thứ gửi đi vẫn chỉ là phần trong hình. Phình quá ngưỡng này thì
+ *  coi là đã thoát ra ngoài: bỏ, vẽ lại từ lưới. Thà hụt một vành mỏng còn hơn
+ *  cho màn hình nói dối hẳn.
+ *
+ *  Ngưỡng chỉ bắt được khi hình NHỎ so với bản vẽ — mà đó đúng là lúc tràn gây
+ *  hại nhất. Hình chiếm gần hết bản vẽ thì tràn cũng chẳng rộng hơn nó bao
+ *  nhiêu, nên nhìn cũng không khác mấy.
+ */
+const MAX_FILL_GROWTH = 4
+
+/** Vùng tô nhỏ thì vành quanh chu vi chiếm tỉ lệ lớn, nhân ba vẫn có thể hụt.
+ *  Cộng thêm một khoản tuyệt đối — nhỏ tới mức không cứu nổi một vụ tràn thật. */
+const FILL_GROWTH_SLACK_PX = 20000
 
 /** Vẽ một nét lên ctx. Canvas nhận nét phải TRONG SUỐT: tẩy dùng
  *  destination-out, nếu nền đã tô màu thì nó khoét thủng luôn cả nền. */
@@ -141,6 +176,10 @@ function drawFill(ctx, stroke, width, height) {
   const cols = stroke.gridCols
   if (!rows || !cols) return
 
+  // Ưu tiên tô ở độ phân giải MÀN HÌNH — ăn sát đúng đường vector đang nhìn
+  // thấy, không chừa viền trắng. Chỉ khi không làm được mới vẽ từ lưới.
+  if (fillAtScreenResolution(ctx, stroke)) return
+
   const shapes = runsToShapes(runs, {
     cellW: width / cols,
     cellH: height / rows,
@@ -156,4 +195,42 @@ function drawFill(ctx, stroke, width, height) {
   ctx.beginPath()
   addShapesToPath(ctx, shapes)
   ctx.fill()
+}
+
+/**
+ * Tô loang thẳng trên pixel của canvas đệm.
+ *
+ * Canvas đệm không có transform và nằm ở đúng hệ toạ độ CSS, nên điểm chạm đã
+ * chuẩn hoá 0..1 quy ra pixel chỉ là một phép nhân.
+ *
+ * Trả về false khi không áp dụng được — canvas quá lớn, hoặc pixel mầm không
+ * khớp trạng thái mà lưới đã tính (chạm đúng vào rìa nét chẳng hạn). Khi đó
+ * caller vẽ từ lưới, nên không bao giờ có chuyện bấm tô mà không thấy gì.
+ *
+ * @returns {boolean} đã tô xong hay chưa
+ */
+function fillAtScreenResolution(ctx, stroke) {
+  const point = stroke.point
+  if (!point) return false
+
+  const canvas = ctx.canvas
+  const w = canvas.width
+  const h = canvas.height
+  if (!w || !h || w * h > MAX_FILL_PIXELS) return false
+
+  // Trần chống tràn, suy từ chính vùng tô trên lưới của nét này.
+  const gridAreaPx = runsCellCount(stroke.runs)
+    * (w / stroke.gridCols) * (h / stroke.gridRows)
+  const maxPixels = gridAreaPx * MAX_FILL_GROWTH + FILL_GROWTH_SLACK_PX
+
+  const img = ctx.getImageData(0, 0, w, h)
+  const changed = floodFillPixels(img.data, w, h, point.x * w, point.y * h, {
+    solid: stroke.value !== 0,
+    color: PEN_RGB,
+    maxPixels,
+  })
+  if (changed < 0) return false
+
+  ctx.putImageData(img, 0, 0)
+  return true
 }
