@@ -3,6 +3,7 @@ import { io } from 'socket.io-client'
 import { useStore } from '../store/index.js'
 import { useWaterfallStore } from '../store/waterfallStore.js'
 import { attachWaterfallBridgeListeners } from '../waterfall/bridgeTransport.js'
+import { enqueueRender, enqueueStroke } from '../whiteboard/renderQueue.js'
 
 const SERVER_URL = import.meta.env.VITE_SERVER_URL || 'http://localhost:3001'
 
@@ -15,12 +16,16 @@ export function getSocket() {
 export function useSocket(roomId, canvasRef) {
   const { token, setRoom, setUsers, addUser, removeUser, setCursor, removeCursor, setConnected } = useStore()
 
+  // Qua hàng đợi chứ không vẽ thẳng: stroke ảnh phải chờ giải mã, và nét tới
+  // sau ảnh phải nằm TRÊN ảnh. Xem whiteboard/renderQueue.js.
+  const getCtx = useCallback(
+    () => canvasRef.current?.getContext('2d', { willReadFrequently: true }) ?? null,
+    [canvasRef],
+  )
+
   const drawRemoteStroke = useCallback((stroke) => {
-    const canvas = canvasRef.current
-    if (!canvas) return
-    const ctx = canvas.getContext('2d')
-    renderStroke(ctx, stroke)
-  }, [canvasRef])
+    enqueueStroke(getCtx, stroke, renderStroke)
+  }, [getCtx])
 
   const drawRemotePreview = useCallback((data) => {
     // Preview layer được handle trong WhiteboardCanvas
@@ -59,11 +64,7 @@ export function useSocket(roomId, canvasRef) {
         setUsers(res.users.filter(u => u.socketId !== socketInstance.id))
 
         // Vẽ lại toàn bộ lịch sử lên canvas
-        const canvas = canvasRef.current
-        if (canvas && res.strokes.length > 0) {
-          const ctx = canvas.getContext('2d', { willReadFrequently: true })
-          res.strokes.forEach(s => renderStroke(ctx, s))
-        }
+        res.strokes.forEach(s => enqueueStroke(getCtx, s, renderStroke))
 
         // Load sprites đã lưu — dispatch event để AnimateOverlay xử lý
         if (res.sprites && res.sprites.length > 0) {
@@ -133,12 +134,15 @@ export function useSocket(roomId, canvasRef) {
     })
 
     // Clear
+    // Cũng qua hàng đợi: một ảnh đang giải mã dở không được hiện ra SAU lệnh xoá.
     socketInstance.on('board:clear', ({ by }) => {
-      const canvas = canvasRef.current
-      if (canvas) {
-        const ctx = canvas.getContext('2d')
-        ctx.clearRect(0, 0, canvas.width, canvas.height)
-      }
+      enqueueRender(() => {
+        const canvas = canvasRef.current
+        if (canvas) {
+          const ctx = canvas.getContext('2d')
+          ctx.clearRect(0, 0, canvas.width, canvas.height)
+        }
+      })
     })
 
     return () => {
@@ -155,6 +159,9 @@ export function useSocket(roomId, canvasRef) {
 export function renderStroke(ctx, stroke) {
   const { tool, color, width, opacity, points } = stroke
   if (!points || points.length < 2) return
+  // Stroke ảnh cũng có 2 điểm (hai góc khung) — vẽ nó như nét bút là ra một
+  // đường chéo. Ảnh chỉ vẽ qua enqueueStroke.
+  if (tool === 'image') return
 
   ctx.save()
   ctx.globalAlpha = opacity ?? 1

@@ -14,7 +14,7 @@ const COLORS = [
 
 const WIDTHS = [2, 4, 8, 16]
 
-export default function Toolbar({ onExport }) {
+export default function Toolbar({ onExport, onUploadImage }) {
   const { tool, color, width, setTool, setColor, setWidth, connected, room, users } = useStore()
 
   const handleClear = () => {
@@ -119,6 +119,7 @@ export default function Toolbar({ onExport }) {
       {/* Actions */}
       <div style={{ display: 'flex', gap: 4 }}>
         <ToolBtn onClick={handleUndo} title="Undo (Ctrl+Z)">↩</ToolBtn>
+        <ToolBtn onClick={onUploadImage} title="Tải ảnh lên để vẽ (hoặc Ctrl+V / kéo thả file vào bảng)">🖼</ToolBtn>
         <ToolBtn onClick={handleClear} title="Xóa bảng" danger>🗑</ToolBtn>
         <ToolBtn onClick={onExport} title="Xuất PNG">💾</ToolBtn>
       </div>

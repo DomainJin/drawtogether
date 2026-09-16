@@ -11,8 +11,10 @@ import { useWaterfallStore } from '../store/waterfallStore.js'
 import { WaterfallCanvas, WaterfallPanel, WaterfallTools, WaterfallDock, WaterfallScrollbar, WaterfallMiniMap, useIsMobile } from '../components/Waterfall/index.js'
 import { WATERFALL_UI as WFUI } from '../waterfall/config.js'
 import { attachWaterfallBridgeListeners } from '../waterfall/bridgeTransport.js'
+import { WHITEBOARD_CONFIG } from '../whiteboard/config.js'
+import { ImagePlacement, ImagePlacementBar, useImageUpload } from '../components/ImageUpload/index.js'
 
-const CANVAS_SIZE = 4000
+const { CANVAS_SIZE } = WHITEBOARD_CONFIG
 const MIN_ZOOM = 0.05
 const MAX_ZOOM = 8
 
@@ -229,6 +231,10 @@ export default function WhiteboardPage() {
 
   useSocket(roomId, canvasRef)
 
+  const imageUpload = useImageUpload({
+    canvasRef, containerRef, camRef: cam, enabled: !waterfallActive,
+  })
+
   // Zoom buttons
   const doZoom = useCallback((factor) => {
     const el = containerRef.current
@@ -326,7 +332,22 @@ export default function WhiteboardPage() {
           >
             <WhiteboardCanvas canvasRef={canvasRef} containerRef={containerRef} camRef={cam} />
             <CursorOverlay canvasRef={canvasRef} />
+            <ImagePlacement
+              pending={imageUpload.pending}
+              zoom={zoom}
+              onMove={imageUpload.moveBy}
+              onResize={imageUpload.resizeBy}
+            />
           </div>
+
+          {/* Ngoài uiVisible: đang đặt ảnh dở thì ẩn UI vẫn phải còn nút Đặt/Huỷ. */}
+          <ImagePlacementBar
+            pending={imageUpload.pending}
+            busy={imageUpload.busy}
+            error={imageUpload.error}
+            onConfirm={imageUpload.confirm}
+            onCancel={imageUpload.cancel}
+          />
 
           {/* Toggle UI */}
           <button
@@ -392,7 +413,7 @@ export default function WhiteboardPage() {
               </div>
 
               <UserList />
-              <Toolbar onExport={handleExport} />
+              <Toolbar onExport={handleExport} onUploadImage={imageUpload.openPicker} />
             </>
           )}
         </>

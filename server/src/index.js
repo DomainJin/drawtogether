@@ -10,6 +10,7 @@ import { setupAnimateRoute } from './routes/animate.js'
 import { setupSocketHandlers } from './socket/handlers.js'
 import { setupWaterfallHandlers } from './socket/waterfallHandlers.js'
 import { setupDatabase } from './db/index.js'
+import { SOCKET_MAX_HTTP_BUFFER_BYTES } from './socket/imageStroke.js'
 
 const PORT = process.env.PORT || 3001
 const CLIENT_URL = process.env.CLIENT_URL || 'http://localhost:5173'
@@ -40,6 +41,9 @@ await setupDatabase()
 const io = new Server(app.server, {
   cors: { origin: '*', methods: ['GET', 'POST'] },
   transports: ['websocket', 'polling'],
+  // Ảnh upload đi qua draw:stroke dưới dạng data URL — mặc định 1MB là không
+  // đủ, gói vượt trần thì server cắt kết nối không báo lỗi. Xem imageStroke.js.
+  maxHttpBufferSize: SOCKET_MAX_HTTP_BUFFER_BYTES,
 })
 
 // ── Redis — khai báo ngoài if để dùng được ở setupSocketHandlers ──────────────

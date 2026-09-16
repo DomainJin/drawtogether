@@ -2,9 +2,10 @@ import { useEffect, useRef, useCallback } from 'react'
 import { useStore } from '../store/index.js'
 import { getSocket } from '../hooks/useSocket.js'
 import { nanoid } from 'nanoid'
+import { WHITEBOARD_CONFIG } from '../whiteboard/config.js'
 
 const CURSOR_THROTTLE_MS = 32
-const CANVAS_SIZE = 4000
+const { CANVAS_SIZE } = WHITEBOARD_CONFIG
 
 export default function WhiteboardCanvas({ canvasRef, containerRef, camRef }) {
   const { tool, color, width, opacity } = useStore()

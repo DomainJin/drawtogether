@@ -8,6 +8,7 @@ import {
   createRoom,
 } from '../db/index.js'
 import { nanoid } from 'nanoid'
+import { isImageStroke, validateImageStroke } from './imageStroke.js'
 
 // Theo dõi presence: roomId -> Map<socketId, userInfo>
 const roomPresence = new Map()
@@ -122,6 +123,17 @@ export function setupSocketHandlers(io, redis) {
     socket.on('draw:stroke', async (stroke) => {
       const roomId = socket.currentRoom
       if (!roomId) return
+
+      if (isImageStroke(stroke)) {
+        const reason = validateImageStroke(stroke)
+        if (reason) {
+          console.warn(`[draw:stroke] từ chối ảnh từ ${displayName}: ${reason}`)
+          return
+        }
+      } else if (stroke && 'src' in stroke) {
+        // Nét vẽ thường không được mang theo ảnh lậu vào DB.
+        delete stroke.src
+      }
 
       // Gắn thêm metadata
       const fullStroke = {

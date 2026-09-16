@@ -71,6 +71,10 @@ async function runMigrations() {
 
     CREATE INDEX IF NOT EXISTS idx_strokes_room_id ON strokes(room_id);
     CREATE INDEX IF NOT EXISTS idx_strokes_created_at ON strokes(created_at);
+
+    -- Ảnh upload lưu như một stroke tool='image': points là 2 góc khung ảnh,
+    -- image_src là data URL. Cột nullable nên các stroke cũ không phải đụng tới.
+    ALTER TABLE strokes ADD COLUMN IF NOT EXISTS image_src TEXT;
   `)
 }
 
@@ -100,18 +104,18 @@ export async function touchRoom(id) {
 }
 
 export async function saveStroke(stroke) {
-  const { roomId, userId, tool, color, width, opacity, points } = stroke
+  const { roomId, userId, tool, color, width, opacity, points, src } = stroke
   const { rows } = await pool.query(
-    `INSERT INTO strokes (room_id, user_id, tool, color, width, opacity, points)
-     VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id`,
-    [roomId, userId, tool, color, width, opacity, JSON.stringify(points)]
+    `INSERT INTO strokes (room_id, user_id, tool, color, width, opacity, points, image_src)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING id`,
+    [roomId, userId, tool, color, width, opacity, JSON.stringify(points), tool === 'image' ? src : null]
   )
   return rows[0].id
 }
 
 export async function getRoomStrokes(roomId, limit = 5000) {
   const { rows } = await pool.query(
-    `SELECT id, user_id, tool, color, width, opacity, points, created_at
+    `SELECT id, user_id, tool, color, width, opacity, points, image_src AS src, created_at
      FROM strokes WHERE room_id = $1
      ORDER BY created_at ASC LIMIT $2`,
     [roomId, limit]
