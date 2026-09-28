@@ -76,20 +76,6 @@ export const grabberStyle = {
   width: 40, height: 5, borderRadius: 3, background: 'rgba(0,0,0,0.18)',
 }
 
-export function collapsedBarStyle(isMobile) {
-  return {
-    display: 'flex', flexDirection: 'column', gap: 10,
-    padding: isMobile ? '6px 16px 0' : 0, flexShrink: 0,
-  }
-}
-
-export function collapsedStatusRowStyle(isMobile) {
-  return {
-    display: 'flex', alignItems: 'center', gap: 8,
-    fontSize: isMobile ? 14 : 13, color: '#444',
-  }
-}
-
 export const sendRowStyle = { display: 'flex', gap: 10 }
 
 export function dotStyle(color) {

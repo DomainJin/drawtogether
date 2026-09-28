@@ -6,6 +6,8 @@
  *  chỗ; test image-upload.test.mjs đối chiếu với BOARD_SIZE_PX của server. */
 export const WHITEBOARD_CONFIG = {
   CANVAS_SIZE: 4000,
+  /** Port của server (Fastify + Socket.IO). Phải khớp PORT trong server/.env. */
+  SERVER_PORT: 3001,
 }
 
 /** Upload ảnh để vẽ đè. Xem components/ImageUpload và whiteboard/imagePlacement.js. */

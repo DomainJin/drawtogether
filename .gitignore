@@ -3,3 +3,5 @@ dist/
 .env
 *.local
 nginx/certs/
+release/
+server/uploads/

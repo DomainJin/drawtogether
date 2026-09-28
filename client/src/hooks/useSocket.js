@@ -5,7 +5,7 @@ import { useWaterfallStore } from '../store/waterfallStore.js'
 import { attachWaterfallBridgeListeners } from '../waterfall/bridgeTransport.js'
 import { enqueueRender, enqueueStroke } from '../whiteboard/renderQueue.js'
 
-const SERVER_URL = import.meta.env.VITE_SERVER_URL || 'http://localhost:3001'
+import { SERVER_URL } from '../whiteboard/serverUrl.js'
 
 let socketInstance = null
 

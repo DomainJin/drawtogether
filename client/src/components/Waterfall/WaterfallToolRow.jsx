@@ -1,5 +1,7 @@
+import { useShallow } from 'zustand/react/shallow'
 import { useWaterfallStore } from '../../store/waterfallStore.js'
 import { WATERFALL_CONFIG as CFG, WATERFALL_UI as UI } from '../../waterfall/config.js'
+import { brushDotPx } from '../../waterfall/brushPreview.js'
 
 /** Công cụ vẽ lưới van: bút, tẩy, tô loang, bề dày nét, undo/redo, xem lưới,
  *  xoá hết. Lưới van là nhị phân (van mở hoặc đóng) nên không có màu; mọi thứ
@@ -14,14 +16,24 @@ import { WATERFALL_CONFIG as CFG, WATERFALL_UI as UI } from '../../waterfall/con
  */
 export default function WaterfallToolRow({ isMobile }) {
   const {
-    brushTool, setBrushTool, brushPx, setBrushPx, clearGrid, grid,
-    showGridPreview, toggleGridPreview, undoStroke, redoStroke, strokes, redoStack,
-  } = useWaterfallStore()
+    brushTool, setBrushTool, brushPx, setBrushPx, clearGrid, hasPattern,
+    showGridPreview, toggleGridPreview, undoStroke, redoStroke, strokeCount, redoCount,
+  } = useWaterfallStore(useShallow((s) => ({
+    brushTool: s.brushTool, setBrushTool: s.setBrushTool,
+    brushPx: s.brushPx, setBrushPx: s.setBrushPx, clearGrid: s.clearGrid,
+    // Chỉ lấy giá trị suy ra (boolean/số): lấy thẳng grid/strokes thì mỗi
+    // điểm nét vẽ mới là thanh công cụ render lại.
+    hasPattern: s.grid.some((row) => row.some((v) => v)),
+    showGridPreview: s.showGridPreview, toggleGridPreview: s.toggleGridPreview,
+    undoStroke: s.undoStroke, redoStroke: s.redoStroke,
+    strokeCount: s.strokes.length, redoCount: s.redoStack.length,
+  })))
 
-  const hasPattern = grid.some((row) => row.some((v) => v))
 
+  // Xoá ngay, không hỏi: window.confirm trên iPad đẩy Safari ra khỏi chế độ
+  // toàn màn hình vẽ mỗi lần bấm.
   const handleClearAll = () => {
-    if (hasPattern && window.confirm('Xoá toàn bộ hoạ tiết?')) clearGrid()
+    if (hasPattern) clearGrid()
   }
 
   const btn = isMobile ? UI.TOOLBAR_BTN_MOBILE_PX : UI.TOOLBAR_BTN_PX
@@ -42,29 +54,37 @@ export default function WaterfallToolRow({ isMobile }) {
   const divider = isMobile ? null
     : <div style={{ width: 1, height: 26, background: 'rgba(0,0,0,0.1)', flexShrink: 0 }} />
 
+  const toolButton = (t) => (
+    <button
+      key={t.id}
+      title={t.title}
+      aria-label={t.title}
+      aria-pressed={brushTool === t.id}
+      onClick={() => setBrushTool(t.id)}
+      style={square({
+        background: brushTool === t.id ? '#1a1a1a' : 'transparent',
+        color: brushTool === t.id ? '#fff' : '#1a1a1a',
+      })}
+    >{t.label}</button>
+  )
+
   return (
     <>
       <div style={groupStyle}>
-        {TOOLS.map((t) => (
-          <button
-            key={t.id}
-            title={t.title}
-            aria-label={t.title}
-            aria-pressed={brushTool === t.id}
-            onClick={() => setBrushTool(t.id)}
-            style={square({
-              background: brushTool === t.id ? '#1a1a1a' : 'transparent',
-              color: brushTool === t.id ? '#fff' : '#1a1a1a',
-            })}
-          >{t.label}</button>
-        ))}
+        {TOOLS.map(toolButton)}
+      </div>
+
+      {divider}
+
+      <div style={groupStyle}>
+        {toolButton(HAND_TOOL)}
       </div>
 
       {divider}
 
       {/* Chấm tròn to dần — thấy ngay bề dày nét, không phải đọc số. Tô loang
           không dùng bề dày nét, nên mờ đi để khỏi bấm nhầm vô ích. */}
-      <div style={{ ...groupStyle, opacity: brushTool === 'fill' ? 0.4 : 1 }}>
+      <div style={{ ...groupStyle, opacity: brushTool === 'fill' || brushTool === 'hand' ? 0.4 : 1 }}>
         {CFG.BRUSH_SIZES_PX.map((px) => (
           <button
             key={px}
@@ -77,7 +97,7 @@ export default function WaterfallToolRow({ isMobile }) {
           >
             <span style={{
               display: 'block',
-              width: Math.min(px, btn - 12), height: Math.min(px, btn - 12),
+              width: brushDotPx(px, btn), height: brushDotPx(px, btn),
               borderRadius: '50%',
               background: brushPx === px ? '#378ADD' : '#8a949e',
             }} />
@@ -94,11 +114,11 @@ export default function WaterfallToolRow({ isMobile }) {
           title="Bỏ nét vừa vẽ (Ctrl+Z)"
           aria-label="Bỏ nét vừa vẽ"
           onClick={undoStroke}
-          disabled={strokes.length === 0}
+          disabled={strokeCount === 0}
           style={square({
             background: 'transparent',
-            color: strokes.length ? '#1a1a1a' : '#c4c4c4',
-            cursor: strokes.length ? 'pointer' : 'not-allowed',
+            color: strokeCount ? '#1a1a1a' : '#c4c4c4',
+            cursor: strokeCount ? 'pointer' : 'not-allowed',
             fontSize: 18,
           })}
         >↶</button>
@@ -106,11 +126,11 @@ export default function WaterfallToolRow({ isMobile }) {
           title="Vẽ lại nét vừa bỏ (Ctrl+Shift+Z)"
           aria-label="Vẽ lại nét vừa bỏ"
           onClick={redoStroke}
-          disabled={redoStack.length === 0}
+          disabled={redoCount === 0}
           style={square({
             background: 'transparent',
-            color: redoStack.length ? '#1a1a1a' : '#c4c4c4',
-            cursor: redoStack.length ? 'pointer' : 'not-allowed',
+            color: redoCount ? '#1a1a1a' : '#c4c4c4',
+            cursor: redoCount ? 'pointer' : 'not-allowed',
             fontSize: 18,
           })}
         >↷</button>
@@ -157,9 +177,13 @@ export default function WaterfallToolRow({ isMobile }) {
 }
 
 /** Tô loang đứng cùng nhóm bút/tẩy vì nó cũng là "cái đang cầm trên tay": một
- *  lúc chỉ chọn được một trong ba. */
+ *  lúc chỉ chọn được một trong ba. Bàn tay cũng loại trừ với ba cái này nhưng
+ *  đứng nhóm RIÊNG: bốn nút một nhóm thì màn 320px không còn thấy trọn nhóm
+ *  vẽ mà chưa cần cuộn (xem dock-fit.test.mjs). */
 const TOOLS = [
   { id: 'pen', label: '✏️', title: 'Bút vẽ' },
   { id: 'eraser', label: '⬜', title: 'Tẩy' },
   { id: 'fill', label: '🪣', title: 'Tô loang — chạm vào vùng trống để đổ đầy, chạm vào mảng đã vẽ để xoá cả mảng' },
 ]
+
+const HAND_TOOL = { id: 'hand', label: '✋', title: 'Bàn tay — kéo một ngón để cuộn, vuốt nhanh để lướt' }

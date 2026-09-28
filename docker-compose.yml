@@ -47,6 +47,9 @@ services:
       REDIS_URL: redis://redis:6379
       JWT_SECRET: ${JWT_SECRET:-change-me-in-production-use-long-random-string}
       CLIENT_URL: ${CLIENT_URL:-http://localhost}
+      PERF_MEDIA_DIR: /data/perf-media
+    volumes:
+      - perf_media:/data/perf-media   # ảnh/video nền Performance mode
     expose:
       - '3001'
 
@@ -83,3 +86,4 @@ services:
 volumes:
   postgres_data:
   redis_data:
+  perf_media:

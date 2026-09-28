@@ -2,7 +2,10 @@ import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useStore } from '../store/index.js'
 
-const SERVER_URL = import.meta.env.VITE_SERVER_URL || 'http://localhost:3001'
+import { SERVER_URL } from '../whiteboard/serverUrl.js'
+import { LS_KEYS, PERF_ROUTES } from '../performance/config.js'
+import { createPerfEvent, perfEventExists } from '../performance/perfApi.js'
+import { loadAdminKey, lsGet, lsSet, saveAdminKey } from '../performance/links.js'
 
 /** Phòng dùng cho màn nước, nhớ lại giữa các lần mở app.
  *
@@ -15,7 +18,7 @@ const LS_WATERFALL_ROOM = 'wb_waterfall_room'
 export default function HomePage() {
   const [name, setName] = useState('')
   const [roomCode, setRoomCode] = useState('')
-  const [loading, setLoading] = useState(null) // null | 'waterfall' | 'board' | 'join'
+  const [loading, setLoading] = useState(null) // null | 'waterfall' | 'perf' | 'board' | 'join'
   const { setAuth, loadAuth } = useStore()
   const navigate = useNavigate()
 
@@ -73,6 +76,26 @@ export default function HomePage() {
       }
 
       navigate(`/${roomId}?mode=waterfall`)
+    } catch {
+      alert('Lỗi kết nối server')
+    } finally {
+      setLoading(null)
+    }
+  }
+
+  /** Mở lại sự kiện Performance gần nhất (nếu còn và máy này có khoá), không thì
+   *  tạo mới — như màn nước, không đẻ sự kiện rác mỗi lần bấm. */
+  const enterPerformance = async () => {
+    setLoading('perf')
+    try {
+      let id = lsGet(LS_KEYS.lastEvent)
+      if (!id || !loadAdminKey(id) || !(await perfEventExists(id))) {
+        const res = await createPerfEvent('Sự kiện')
+        id = res.event.id
+        saveAdminKey(id, res.adminKey)
+        lsSet(LS_KEYS.lastEvent, id)
+      }
+      navigate(PERF_ROUTES.setup(id))
     } catch {
       alert('Lỗi kết nối server')
     } finally {
@@ -141,6 +164,22 @@ export default function HomePage() {
         </button>
         <p style={{ margin: '8px 0 0', textAlign: 'center', color: '#999', fontSize: 13 }}>
           Vẽ hoạ tiết rồi gửi thẳng tới màn nước — không cần tên hay mã phòng
+        </p>
+
+        <button
+          onClick={enterPerformance}
+          disabled={loading !== null}
+          style={{
+            width: '100%', padding: '16px', borderRadius: 12, marginTop: 14,
+            background: 'linear-gradient(90deg, #ef476f, #ff9f1c)', color: '#fff', border: 'none',
+            fontSize: 16, fontWeight: 700, cursor: 'pointer',
+            opacity: loading !== null ? 0.6 : 1,
+          }}
+        >
+          {loading === 'perf' ? 'Đang mở...' : '🎤 Performance — ký tên lên LED'}
+        </button>
+        <p style={{ margin: '8px 0 0', textAlign: 'center', color: '#999', fontSize: 13 }}>
+          Khán giả quét QR ký tên, chữ ký hiện lên màn hình sân khấu
         </p>
 
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, margin: '22px 0 18px' }}>

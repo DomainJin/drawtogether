@@ -31,6 +31,7 @@ const group = (n) => n * btn + (n - 1) * ITEM_GAP
 // Các nhóm trên dock, theo đúng thứ tự trong WaterfallToolRow.
 const groups = [
   ['bút/tẩy/tô', group(3)],
+  ['bàn tay', group(1)],
   ['cỡ nét', group(CFG.BRUSH_SIZES_PX.length)],
   ['undo/redo', group(2)],
   ['lưới/xoá', group(2)],

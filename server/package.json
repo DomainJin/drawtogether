@@ -4,7 +4,8 @@
   "type": "module",
   "scripts": {
     "dev": "nodemon --watch src src/index.js",
-    "start": "node src/index.js"
+    "start": "node src/index.js",
+    "test": "node test/perf-config.test.mjs && node test/perf-signature.test.mjs && node test/perf-media.test.mjs"
   },
   "dependencies": {
     "@socket.io/redis-adapter": "^8.3.0",

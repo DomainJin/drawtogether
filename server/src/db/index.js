@@ -12,8 +12,10 @@ export async function setupDatabase() {
     max: 20,
     idleTimeoutMillis: 30000,
     connectionTimeoutMillis: 5000,
-    // Railway PostgreSQL dùng SSL
-    ssl: process.env.DATABASE_URL ? { rejectUnauthorized: false } : false,
+    // Railway PostgreSQL dùng SSL; Postgres local không hỗ trợ → tắt bằng DATABASE_SSL=false
+    ssl: process.env.DATABASE_URL && process.env.DATABASE_SSL !== 'false'
+      ? { rejectUnauthorized: false }
+      : false,
   })
 
   // Test connection với retry

@@ -7,8 +7,9 @@ import Toolbar from '../components/Toolbar.jsx'
 import CursorOverlay from '../components/CursorOverlay.jsx'
 import UserList from '../components/UserList.jsx'
 import AnimateOverlay from '../components/AnimateOverlay.jsx'
+import { useShallow } from 'zustand/react/shallow'
 import { useWaterfallStore } from '../store/waterfallStore.js'
-import { WaterfallCanvas, WaterfallPanel, WaterfallTools, WaterfallDock, WaterfallScrollbar, WaterfallMiniMap, useIsMobile } from '../components/Waterfall/index.js'
+import { WaterfallCanvas, WaterfallPanel, WaterfallTools, WaterfallDock, WaterfallScrollbar, useIsMobile } from '../components/Waterfall/index.js'
 import { WATERFALL_UI as WFUI } from '../waterfall/config.js'
 import { attachWaterfallBridgeListeners } from '../waterfall/bridgeTransport.js'
 import { WHITEBOARD_CONFIG } from '../whiteboard/config.js'
@@ -21,7 +22,12 @@ const MAX_ZOOM = 8
 export default function WhiteboardPage() {
   const { roomId } = useParams()
   const { token, room } = useStore()
-  const { active: waterfallActive, setActive: setWaterfallActive, panelOpen } = useWaterfallStore()
+  const { active: waterfallActive, setActive: setWaterfallActive, panelOpen: panelOpenRaw, focusMode } = useWaterfallStore(
+    useShallow((s) => ({ active: s.active, setActive: s.setActive, panelOpen: s.panelOpen, focusMode: s.focusMode })),
+  )
+  // Toàn màn hình vẽ giấu panel mà KHÔNG đổi panelOpen — thoát ra thì panel
+  // về đúng như trước. Chỗ chừa cho panel phải theo cái đang thực sự hiện.
+  const panelOpen = panelOpenRaw && !(waterfallActive && focusMode)
   const isMobile = useIsMobile()
   const [searchParams] = useSearchParams()
   const canvasRef = useRef(null)
@@ -272,8 +278,8 @@ export default function WhiteboardPage() {
       onTouchMove={onTouchMove}
       onTouchEnd={onTouchEnd}
     >
-      {/* Waterfall toggle — luôn hiển thị */}
-      <button
+      {/* Waterfall toggle — luôn hiển thị, trừ lúc toàn màn hình vẽ */}
+      {!(waterfallActive && focusMode) && <button
         onClick={() => setWaterfallActive(!waterfallActive)}
         title={waterfallActive ? 'Quay lại vẽ chung' : 'Vẽ hoạ tiết gửi sang màn nước'}
         style={{
@@ -287,7 +293,7 @@ export default function WhiteboardPage() {
           color: waterfallActive ? '#fff' : '#378ADD',
           fontWeight: 600,
         }}
-      >{waterfallActive ? '✏️' : '🌊'}</button>
+      >{waterfallActive ? '✏️' : '🌊'}</button>}
 
       {waterfallActive ? (
         <>
@@ -304,10 +310,9 @@ export default function WhiteboardPage() {
               touchAction: 'none',
             }}>
               <WaterfallCanvas />
-              {/* Thanh cuộn và minimap nằm TRONG khung vẽ để bám theo đúng
-                  vùng đó, không bị bottom sheet che. */}
+              {/* Thanh cuộn nằm TRONG khung vẽ để bám theo đúng vùng đó,
+                  không bị bottom sheet che. */}
               <WaterfallScrollbar bottomOffset={0} />
-              <WaterfallMiniMap bottomOffset={0} />
             </div>
           {/* Mở bảng cài đặt trên điện thoại thì GIẤU dock: sheet trượt lên từ
               chính mép dưới, hai thứ chồng lên nhau ở đúng vùng đó. Sheet đã

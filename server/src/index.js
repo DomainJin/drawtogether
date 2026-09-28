@@ -7,9 +7,12 @@ import { createAdapter } from '@socket.io/redis-adapter'
 import Redis from 'ioredis'
 import { setupRoomRoutes } from './routes/rooms.js'
 import { setupAnimateRoute } from './routes/animate.js'
+import { setupPerfRoutes } from './routes/perf.js'
 import { setupSocketHandlers } from './socket/handlers.js'
 import { setupWaterfallHandlers } from './socket/waterfallHandlers.js'
+import { setupPerfHandlers } from './socket/perfHandlers.js'
 import { setupDatabase } from './db/index.js'
+import { setupPerfTables } from './db/perf.js'
 import { SOCKET_MAX_HTTP_BUFFER_BYTES } from './socket/imageStroke.js'
 
 const PORT = process.env.PORT || 3001
@@ -36,6 +39,7 @@ await app.register(jwt, { secret: JWT_SECRET })
 
 // ── Database ──────────────────────────────────────────────────────────────────
 await setupDatabase()
+await setupPerfTables()
 
 // ── Socket.IO ─────────────────────────────────────────────────────────────────
 const io = new Server(app.server, {
@@ -91,6 +95,7 @@ io.use(async (socket, next) => {
 // Waterfall handlers registered first so bridge can authenticate before auth check
 setupWaterfallHandlers(io)
 setupSocketHandlers(io, redisClient)
+setupPerfHandlers(io)
 
 // ── HTTP Routes ───────────────────────────────────────────────────────────────
 app.get('/health', async () => ({
@@ -105,6 +110,7 @@ app.get('/health', async () => ({
 }))
 await setupRoomRoutes(app)
 await setupAnimateRoute(app)
+await setupPerfRoutes(app)
 
 // ── Start ─────────────────────────────────────────────────────────────────────
 await app.listen({ port: PORT, host: '0.0.0.0' })

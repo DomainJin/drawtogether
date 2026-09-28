@@ -6,7 +6,7 @@ import { extractRawTexture, textureScale } from '../animate/rawSprite.js'
 import { computeSpriteBox } from '../animate/layout.js'
 import { Sprite } from '../animate/sprite.js'
 
-const SERVER_URL = import.meta.env.VITE_SERVER_URL || 'http://localhost:3001'
+import { SERVER_URL } from '../whiteboard/serverUrl.js'
 
 /** Nhớ lựa chọn bật/tắt AI giữa các phiên: người dùng tắt AI thường vì mạng
  *  chậm hoặc hết quota, tình trạng đó không tự hết sau khi F5. */

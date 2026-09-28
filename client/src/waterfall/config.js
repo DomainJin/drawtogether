@@ -77,7 +77,7 @@ export const WATERFALL_CONFIG = {
    *  Toolbar whiteboard. Để theo pixel chứ không theo số ô vì ô lưới rất hẹp
    *  và cao (160 cột × 24-64 hàng): nét phải tròn theo mắt nhìn thì mới dễ vẽ.
    *  brush.js quy đổi ra bán kính số ô riêng cho từng trục. */
-  BRUSH_SIZES_PX: [4, 10, 20, 34],
+  BRUSH_SIZES_PX: [4, 10, 20, 34, 50, 70],
   DEFAULT_BRUSH_PX: 10,
 
   /** Hiển thị preview — xem gridRenderer.js.
@@ -180,4 +180,18 @@ export const WATERFALL_UI = {
   /** Khoảng hở giữa các nhóm công cụ. Trên mobile thay luôn cho vạch ngăn —
    *  thanh xuống dòng được, mà vạch ngăn rơi đầu dòng thì rất xấu. */
   TOOLBAR_GROUP_GAP_PX: 8,
+
+  /** Công cụ bàn tay (✋): kéo một ngón để cuộn, nhấc tay thì canvas còn trôi
+   *  theo đà. Vận tốc lấy trung bình trong HAND_VELOCITY_WINDOW_MS cuối — đủ
+   *  ngắn để cú vuốt dừng lại rồi mới nhấc không bị trôi, đủ dài để không ăn
+   *  theo một sự kiện nhiễu. */
+  HAND_VELOCITY_WINDOW_MS: 100,
+  /** Mỗi khung 60Hz vận tốc còn lại bấy nhiêu phần. */
+  HAND_FRICTION_PER_FRAME: 0.95,
+  /** Dưới vận tốc này (px/ms) thì dừng trôi. */
+  HAND_MIN_VELOCITY: 0.02,
+
+  /** Dòng nhắc "Thêm vào Màn hình chính" khi bấm ⛶ trên Safari iPad tự ẩn sau
+   *  bấy nhiêu ms — đủ đọc, không che canvas lâu. */
+  HOME_SCREEN_HINT_MS: 6000,
 }

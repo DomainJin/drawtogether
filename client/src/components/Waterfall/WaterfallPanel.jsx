@@ -1,14 +1,23 @@
+import { useShallow } from 'zustand/react/shallow'
 import { useWaterfallStore } from '../../store/waterfallStore.js'
 import { WATERFALL_CONFIG as CFG } from '../../waterfall/config.js'
 import { SOCKET_STATUS } from '../../waterfall/valveSocket.js'
 import { useWaterfallPanel } from './useWaterfallPanel.js'
+import {
+  HOME_SCREEN_STEPS, isIOS, isStandalone, needsHomeScreenForFullscreen,
+} from '../../waterfall/fullscreen.js'
 import { PLAY_MODE_ORDER, PLAY_MODE_META, playProgressLabel } from '../../waterfall/playback.js'
 import {
-  backBtnStyle, collapsedBarStyle, collapsedStatusRowStyle, dangerBtnStyle,
+  backBtnStyle, dangerBtnStyle,
   dotStyle, grabberStyle, grabberWrapStyle, inputStyle, modeTabStyle,
   panelStyle, primaryBtnStyle, rangeStyle, secondaryBtnStyle, segmentRowStyle,
   sendRowStyle, sheetBodyStyle,
 } from './panelStyles.js'
+
+/** Chỉ gợi ý trên iPhone/iPad đang mở bằng Safari — mở từ Màn hình chính rồi
+ *  hoặc máy tính thì dòng này là thừa. Tính một lần: không đổi trong phiên. */
+const SHOW_HOME_SCREEN_TIP = typeof window !== 'undefined'
+  && needsHomeScreenForFullscreen({ ios: isIOS(window.navigator), standalone: isStandalone(window) })
 
 const STATUS_LABEL = {
   [SOCKET_STATUS.DISCONNECTED]: 'Chưa kết nối',
@@ -33,9 +42,41 @@ export default function WaterfallPanel({ onExit }) {
     clearGrid, allOff, sendPattern, sending, sendError, lastSentAt,
     cols,
     playMode, setPlayMode, playing, playDone, playTotal, stopPlayback,
-  } = useWaterfallStore()
+  } = useWaterfallStore(useShallow((s) => ({
+    transportMode: s.transportMode,
+    setTransportMode: s.setTransportMode,
+    bridgeOnline: s.bridgeOnline,
+    ip: s.ip,
+    wsPort: s.wsPort,
+    status: s.status,
+    error: s.error,
+    valveCount: s.valveCount,
+    valveBytes: s.valveBytes,
+    setIp: s.setIp,
+    setWsPort: s.setWsPort,
+    connect: s.connect,
+    disconnect: s.disconnect,
+    rowCount: s.rowCount,
+    rowIntervalMs: s.rowIntervalMs,
+    setRowCount: s.setRowCount,
+    setRowIntervalMs: s.setRowIntervalMs,
+    clearGrid: s.clearGrid,
+    allOff: s.allOff,
+    sendPattern: s.sendPattern,
+    sending: s.sending,
+    sendError: s.sendError,
+    lastSentAt: s.lastSentAt,
+    cols: s.cols,
+    playMode: s.playMode,
+    setPlayMode: s.setPlayMode,
+    playing: s.playing,
+    playDone: s.playDone,
+    playTotal: s.playTotal,
+    stopPlayback: s.stopPlayback,
+  })))
 
   const { isMobile, expanded, togglePanel } = useWaterfallPanel()
+  const focusMode = useWaterfallStore((s) => s.focusMode)
 
   const isBridge = transportMode === 'bridge'
   const connected = isBridge ? bridgeOnline : status === SOCKET_STATUS.CONNECTED
@@ -47,11 +88,11 @@ export default function WaterfallPanel({ onExit }) {
     else connect()
   }
 
-  // Trên điện thoại "thu gọn" nghĩa là BIẾN MẤT hẳn, không để lại thanh nào.
-  // Mọi thao tác thường dùng đã nằm ở dock đáy (WaterfallDock); panel này chỉ
-  // là phần cài đặt, mở bằng ⚙ rồi đóng lại, nên không có lý do chiếm chỗ vẽ
-  // lúc không dùng tới.
-  if (isMobile && !expanded) return null
+  // "Thu gọn" nghĩa là BIẾN MẤT hẳn, ở mọi kích thước màn hình. Gửi, chế độ
+  // chạy, xoá đã nằm trên thanh công cụ (dock điện thoại / pill iPad-desktop),
+  // nên panel chỉ còn là phần cài đặt: ⚙ bật lên, ⚙ tắt đi, không để lại thẻ
+  // nào chiếm chỗ vẽ. Toàn màn hình vẽ cũng giấu nó.
+  if (!expanded || focusMode) return null
 
   // Đang chạy thì chính nút đó thành nút Dừng: chế độ lặp vô tận không có điểm
   // kết thúc, phải luôn nhìn thấy đường tắt ở đúng chỗ vừa bấm để bật.
@@ -111,37 +152,6 @@ export default function WaterfallPanel({ onExit }) {
         </div>
       )}
 
-      {/* Thu gọn: chỉ giữ những gì cần để gửi và thấy lỗi, trả chỗ lại cho
-          bảng vẽ. Mobile là thanh đáy, desktop là thẻ nhỏ góc dưới phải. */}
-      {!expanded && (
-        <div style={collapsedBarStyle(isMobile)}>
-          <div style={collapsedStatusRowStyle(isMobile)}>
-            <div style={dotStyle(connected ? '#1D9E75' : '#999')} />
-            <span>{connected ? 'Sẵn sàng gửi' : 'Chưa kết nối'}</span>
-            <span style={{ marginLeft: 'auto', color: '#999', fontSize: 13 }}>
-              {cols} × {rowCount}
-            </span>
-            {/* Biểu tượng thay chữ: trên iPhone mỗi pixel bề ngang đều là chỗ
-                vẽ bị mất. Nhãn đầy đủ vẫn còn ở title cho người dùng chuột. */}
-            <button
-              onClick={togglePanel}
-              title="Cài đặt màn nước"
-              aria-label="Cài đặt màn nước"
-              style={{ ...backBtnStyle, width: 40, height: 34, padding: 0, fontSize: 17 }}
-            >⚙</button>
-          </div>
-          <div style={sendRowStyle}>
-            {sendBtn}
-            <button
-              onClick={clearGrid}
-              title="Xoá hoạ tiết"
-              style={{ ...secondaryBtnStyle(isMobile), flex: 'none', paddingInline: 18 }}
-            >🗑</button>
-          </div>
-          {sendError && <Note color="#E24B4A">{sendError}</Note>}
-        </div>
-      )}
-
       {expanded && (
         <div style={sheetBodyStyle(isMobile)}>
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
@@ -156,6 +166,13 @@ export default function WaterfallPanel({ onExit }) {
               >{isMobile ? '✕' : 'Thu gọn →'}</button>
             </div>
           </div>
+
+          {SHOW_HOME_SCREEN_TIP && (
+            <Note color="#378ADD">
+              Toàn màn hình trên iPad: {HOME_SCREEN_STEPS} — hết thanh Safari,
+              hết kéo-để-làm-mới.
+            </Note>
+          )}
 
           <Section title="Kết nối tới thiết bị">
             <div style={segmentRowStyle}>

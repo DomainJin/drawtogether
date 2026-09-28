@@ -1,5 +1,6 @@
 import { WATERFALL_UI as UI } from '../../waterfall/config.js'
 import WaterfallToolRow from './WaterfallToolRow.jsx'
+import WaterfallActions from './WaterfallActions.jsx'
 import { useUndoShortcuts } from './useUndoShortcuts.js'
 
 /**
@@ -8,6 +9,9 @@ import { useUndoShortcuts } from './useUndoShortcuts.js'
  *
  * Trên điện thoại dùng WaterfallDock thay cho cái này: pill nổi giữa màn chiếm
  * chỗ vẽ theo cả hai chiều, còn dock thì dính sát đáy trên đúng một hàng.
+ *
+ * Cụm hành động (⛶ ⚙ chế độ 🌊) nằm luôn trên pill: panel bên phải chỉ còn
+ * là phần cài đặt, ẩn hẳn khi không dùng — không phải mở nó ra chỉ để gửi.
  *
  * @param {boolean} panelOpen canvas bị panel chiếm bề ngang, dịch tâm pill
  */
@@ -31,6 +35,10 @@ export default function WaterfallTools({ panelOpen }) {
       zIndex: 110, maxWidth: '92vw',
     }}>
       <WaterfallToolRow isMobile={false} />
+      <div style={{ width: 1, height: 26, background: 'rgba(0,0,0,0.1)', flexShrink: 0 }} />
+      <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+        <WaterfallActions showFocus />
+      </div>
     </div>
   )
 }

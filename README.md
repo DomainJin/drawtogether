@@ -2,6 +2,15 @@
 
 Ứng dụng vẽ cộng tác real-time. Nhiều người cùng truy cập một link và vẽ cùng nhau.
 
+## Performance mode (ký tên lên màn LED)
+
+Chạy song song whiteboard: khán giả quét QR → ký trên điện thoại → chữ ký hiện
+trên màn LED sân khấu. Ba giao diện: setup kỹ thuật `/perf/:id/setup`, màn show
+`/perf/:id/show`, trang ký `/s/:id`. Vào từ nút **🎤 Performance** ở trang chủ.
+
+Hướng dẫn vận hành: [docs/performance/README.md](docs/performance/README.md) ·
+Spec: [docs/performance/SPEC.md](docs/performance/SPEC.md)
+
 ## Stack
 
 - **Frontend**: React 18 + Canvas API + Socket.IO client + Zustand

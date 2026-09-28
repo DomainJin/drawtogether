@@ -7,6 +7,14 @@
       content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover"
     />
     <title>Whiteboard – Vẽ cùng nhau</title>
+    <!-- "Thêm vào Màn hình chính" trên iPad → mở toàn màn hình thật, không có
+         thanh Safari, không kéo-để-làm-mới, không hộp hỏi của Fullscreen API. -->
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-title" content="Màn nước" />
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+    <link rel="manifest" href="/manifest.webmanifest" />
     <style>
       *,
       *::before,
@@ -20,6 +28,8 @@
         width: 100%;
         height: 100%;
         overflow: hidden;
+        /* Chặn kéo-để-làm-mới và hiệu ứng nảy kéo lệch cả trang (Safari 16+). */
+        overscroll-behavior: none;
       }
       body {
         font-family:

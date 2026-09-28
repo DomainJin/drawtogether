@@ -79,13 +79,21 @@ export const useWaterfallStore = create((set, get) => ({
   setPanelOpen: (panelOpen) => set({ panelOpen }),
   togglePanel: () => set((s) => ({ panelOpen: !s.panelOpen })),
 
+  /** Chế độ toàn màn hình vẽ: ẩn panel và nút chuyển chế độ góc trên, chỉ
+   *  còn canvas + thanh công cụ. Tách khỏi panelOpen để thoát ra thì panel
+   *  trở về đúng trạng thái trước đó. Xem useFocusMode. */
+  focusMode: false,
+  setFocusMode: (focusMode) => set({ focusMode }),
+
   /** Rời khu vực Màn nước thì dừng lượt đang chạy.
    *
    *  Nút Dừng nằm trong panel màn nước; ra ngoài mà lượt lặp vô tận vẫn chạy
    *  thì app cứ bơm frame tiếp mà người dùng không còn chỗ nào để tắt. */
   setActive: (active) => {
     if (!active && get().playing) get().stopPlayback()
-    set({ active })
+    // Rời Màn nước thì tắt luôn toàn màn hình vẽ, kẻo lần sau vào lại thấy
+    // giao diện bị giấu mà không nhớ vì sao.
+    set(active ? { active } : { active, focusMode: false })
   },
   toggleActive: () => get().setActive(!get().active),
 
@@ -247,6 +255,19 @@ export const useWaterfallStore = create((set, get) => ({
       const last = s.strokes[s.strokes.length - 1]
       const next = { ...last, points: [...last.points, point] }
       return { strokes: [...s.strokes.slice(0, -1), next] }
+    }),
+  /** Gộp nhiều điểm + ô của MỘT khung hình vào một lần set. Bút Apple Pencil
+   *  bắn 120–240 sự kiện/giây; mỗi sự kiện một set là mỗi lần render + vẽ lại
+   *  cả canvas — iPad không theo kịp, nét bị giật. */
+  extendStrokeBatch: (points, cells, value) =>
+    set((s) => {
+      if (!s.strokes.length || !points.length) return s
+      const last = s.strokes[s.strokes.length - 1]
+      const next = { ...last, points: [...last.points, ...points] }
+      return {
+        strokes: [...s.strokes.slice(0, -1), next],
+        grid: stampCells(s.grid, cells, value),
+      }
     }),
 
   /** Bỏ nét vừa vẽ. Phải dựng lại lưới từ các nét còn lại chứ không "trừ

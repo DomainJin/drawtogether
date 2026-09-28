@@ -1,0 +1,31 @@
+WHITEBOARD - BAN DONG GOI CHAY TREN LAPTOP (Windows 10/11 x64)
+===============================================================
+
+Khong can cai gi them: da kem Node.js, PostgreSQL va thu vien VC++.
+
+LAN DAU TREN MAY MOI
+  1. Chuot phai setup-firewall.bat > Run as administrator  (mo port cho iPad)
+  2. Nhay dup start.bat  (lan dau mat ~10 giay de tao database)
+
+MOI LAN CHAY
+  - start.bat : bat PostgreSQL + server + client, in ra dia chi cho iPad
+  - stop.bat  : tat het
+
+TREN IPAD
+  - Tat Wi-Fi, cam day LAN (qua switch) vao laptop
+  - Mo Safari:  http://<IP-laptop>:5173   (start.bat in san dia chi)
+
+APP WATERFALL DESIGNER (cung laptop)
+  - Muc Drawtogether Bridge > bam "Noi bo (LAN)"  (http://localhost:3001)
+
+DU LIEU
+  - data\pg : database (phong, net ve). Xoa thu muc nay = xoa sach du lieu.
+  - logs\   : log PostgreSQL / tao DB khi co loi.
+
+DOI PORT
+  - Sua config.bat. WB_SERVER_PORT phai giu 3001 (client da build san port nay).
+
+LOI THUONG GAP
+  - iPad khong vao duoc: chua chay setup-firewall.bat, hoac sai IP.
+  - "LOI PostgreSQL": port 5433 bi chiem -> doi PG_PORT trong config.bat.
+  - Port 3001/5173 bi chiem: tat app dang dung port do (vd ban dev).
