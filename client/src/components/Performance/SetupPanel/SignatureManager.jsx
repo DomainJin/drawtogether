@@ -4,6 +4,7 @@ import { styleOf } from '../../../performance/render/exportImages.js'
 import { usePerformanceStore } from '../../../store/performanceStore.js'
 import { Section } from './controls.jsx'
 import SignatureThumb from './SignatureThumb.jsx'
+import ClipSection from './ClipSection.jsx'
 import { useSignatureActions } from './useSignatureActions.js'
 import * as S from './styles.js'
 
@@ -58,6 +59,8 @@ export default function SignatureManager({ socketRef, stageRef, fontVersion }) {
         </div>
         {act.busy && <div style={{ ...S.labelStyle, fontSize: 12 }}>Đang xử lý: {act.busy}</div>}
       </Section>
+
+      <ClipSection />
 
       <Section
         title={`Chữ ký (${signatures.length})`}

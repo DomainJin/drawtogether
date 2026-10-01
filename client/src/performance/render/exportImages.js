@@ -51,18 +51,10 @@ export async function signaturesZip(sigs, config, onProgress) {
   return new Blob([buildZip(files)], { type: 'application/zip' })
 }
 
-/** Ảnh chụp màn show đúng kích thước vùng LED: nền → chữ ký → QR.
- *  `drawScene(ctx)` vẽ lại chữ ký ở độ phân giải thật (canvas preview trong
- *  setup đã bị thu nhỏ — chụp nó sẽ mờ). `bgEl` là <img>/<video> đang hiển thị (cần crossOrigin="anonymous", nếu
- *  không canvas bị "tainted" và toBlob ném lỗi). */
-export async function stageSnapshot({ config, drawScene, bgEl, qrImg }) {
-  const { w: W, h: H } = config.output
-  const c = document.createElement('canvas')
-  c.width = W
-  c.height = H
-  const ctx = c.getContext('2d')
+/** Nền vùng LED: màu → ảnh/frame video (theo object-fit) → lớp tối. Canvas
+ *  không có object-fit nên tự tính giống hệt CSS — ảnh chụp/clip khớp màn hình. */
+export function drawStageBackground(ctx, config, bgEl, W, H) {
   const bg = config.showBg
-
   ctx.fillStyle = bg.color
   ctx.fillRect(0, 0, W, H)
   if (bgEl && bg.type !== 'color') {
@@ -77,18 +69,35 @@ export async function stageSnapshot({ config, drawScene, bgEl, qrImg }) {
     ctx.fillStyle = `rgba(0,0,0,${bg.dim})`
     ctx.fillRect(0, 0, W, H)
   }
-  drawScene?.(ctx)
-  if (qrImg && config.qr.show && qrImg.naturalWidth) {
-    const q = qrPlacement(W, H, config.qr)
-    ctx.drawImage(qrImg, q.x, q.y, q.size, q.size)
-    if (q.captionH) {
-      ctx.fillStyle = '#ffffff'
-      ctx.font = `600 ${Math.round(q.captionH * 0.62)}px system-ui, sans-serif`
-      ctx.textAlign = 'center'
-      ctx.textBaseline = 'middle'
-      ctx.fillText(config.qr.caption, q.x + q.size / 2, q.y + q.size + q.captionH / 2)
-    }
+}
+
+/** QR + chú thích, cùng vị trí với lớp QR (DOM) trên màn show. */
+export function drawStageQr(ctx, config, qrImg, W, H) {
+  if (!qrImg || !config.qr.show || !qrImg.naturalWidth) return
+  const q = qrPlacement(W, H, config.qr)
+  ctx.drawImage(qrImg, q.x, q.y, q.size, q.size)
+  if (q.captionH) {
+    ctx.fillStyle = '#ffffff'
+    ctx.font = `600 ${Math.round(q.captionH * 0.62)}px system-ui, sans-serif`
+    ctx.textAlign = 'center'
+    ctx.textBaseline = 'middle'
+    ctx.fillText(config.qr.caption, q.x + q.size / 2, q.y + q.size + q.captionH / 2)
   }
+}
+
+/** Ảnh chụp màn show đúng kích thước vùng LED: nền → chữ ký → QR.
+ *  `drawScene(ctx)` vẽ lại chữ ký ở độ phân giải thật (canvas preview trong
+ *  setup đã bị thu nhỏ — chụp nó sẽ mờ). `bgEl` là <img>/<video> đang hiển thị
+ *  (cần crossOrigin="anonymous", nếu không canvas bị "tainted" và toBlob ném lỗi). */
+export async function stageSnapshot({ config, drawScene, bgEl, qrImg }) {
+  const { w: W, h: H } = config.output
+  const c = document.createElement('canvas')
+  c.width = W
+  c.height = H
+  const ctx = c.getContext('2d')
+  drawStageBackground(ctx, config, bgEl, W, H)
+  drawScene?.(ctx)
+  drawStageQr(ctx, config, qrImg, W, H)
   return canvasToBlob(c)
 }
 

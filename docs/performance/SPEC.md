@@ -156,3 +156,21 @@ Màn show coi chữ ký là "mới" (chạy hiệu ứng vào + spotlight) khi n
 - ZIP tất cả (ZIP STORE, CRC-32, tên file UTF-8 — `performance/zipStore.js`).
 - Chụp màn show: nền (màu/ảnh/frame video hiện tại) + chữ ký + QR, đúng kích
   thước vùng LED.
+
+## 8. Dựng lại clip
+
+Không quay màn hình: clip được **dựng lại** từ dữ liệu trong DB (nét + `t` +
+`createdAt` + config), qua đúng `stepScene` + `drawSignature` của màn show.
+
+- Render offline từng frame (thời gian ảo `t = frame / fps`), mã hoá bằng
+  WebCodecs qua `mediabunny` → không rớt frame dù máy yếu hay vùng LED 4K.
+- Codec: thử `avc` (→ `.mp4`), rồi `vp9`, `vp8` (→ `.webm`). Kích thước = vùng
+  LED, làm tròn xuống số chẵn (H.264 yêu cầu).
+- Dòng thời gian: `INTRO_MS` trống → các chữ ký `visible` xuất hiện theo thứ
+  tự `createdAt` trong `spanMs` → chờ cảnh lắng (hết hàng spotlight, hết hiệu
+  ứng vào) → giữ `OUTRO_MS` → hết.
+- Nhịp `even`: cách đều. Nhịp `real`: tỉ lệ khoảng cách thật, mỗi khoảng bị
+  chặn ở `REAL_GAP_CAP × trung vị` (bỏ quãng vắng khi MC nói) rồi co về `spanMs`.
+- Khoảng cách trung bình < `SPOTLIGHT_MIN_INTERVAL_MS` → tắt spotlight trong
+  clip (nếu không hàng đợi dồn vô hạn); ngược lại `spotlightMs ≤ khoảng cách`.
+- Nền video: tua tới `t mod duration` mỗi frame. Nền không tải được → dùng màu nền.

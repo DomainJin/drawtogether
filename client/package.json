@@ -5,11 +5,12 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build",
-    "test": "node --import ./test/register-loader.mjs test/undo-redo.test.mjs && node test/fill.test.mjs && node test/run-geometry.test.mjs && node test/pixel-fill.test.mjs && node test/fill-render.test.mjs && node test/dock-fit.test.mjs && node test/animate-raw-sprite.test.mjs && node test/play-modes.test.mjs && node test/image-upload.test.mjs && node --import ./test/register-loader.mjs test/stroke-batch.test.mjs && node test/pan-momentum.test.mjs && node --import ./test/register-loader.mjs test/server-url.test.mjs && node test/fullscreen.test.mjs && node test/brush-sizes.test.mjs && node test/perf-core.test.mjs && node test/perf-zip.test.mjs && node --import ./test/register-loader.mjs test/perf-store.test.mjs",
+    "test": "node --import ./test/register-loader.mjs test/undo-redo.test.mjs && node test/fill.test.mjs && node test/run-geometry.test.mjs && node test/pixel-fill.test.mjs && node test/fill-render.test.mjs && node test/dock-fit.test.mjs && node test/animate-raw-sprite.test.mjs && node test/play-modes.test.mjs && node test/image-upload.test.mjs && node --import ./test/register-loader.mjs test/stroke-batch.test.mjs && node test/pan-momentum.test.mjs && node --import ./test/register-loader.mjs test/server-url.test.mjs && node test/fullscreen.test.mjs && node test/brush-sizes.test.mjs && node test/perf-core.test.mjs && node test/perf-zip.test.mjs && node --import ./test/register-loader.mjs test/perf-store.test.mjs && node test/perf-replay.test.mjs",
     "preview": "vite preview",
     "test:e2e:perf": "node test/perf-socket.e2e.mjs"
   },
   "dependencies": {
+    "mediabunny": "^1.61.0",
     "nanoid": "^5.0.7",
     "qrcode": "^1.5.4",
     "react": "^18.3.1",

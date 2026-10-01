@@ -19,7 +19,9 @@ APP WATERFALL DESIGNER (cung laptop)
   - Muc Drawtogether Bridge > bam "Noi bo (LAN)"  (http://localhost:3001)
 
 DU LIEU
-  - data\pg : database (phong, net ve). Xoa thu muc nay = xoa sach du lieu.
+  - data\pg    : database (phong, net ve, su kien Performance, chu ky).
+  - data\media : anh/video nen cua Performance.
+  - Xoa thu muc data = xoa sach du lieu. Cap nhat goi: chep de len, GIU data\.
   - logs\   : log PostgreSQL / tao DB khi co loi.
 
 DOI PORT

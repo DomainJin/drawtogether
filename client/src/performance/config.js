@@ -67,6 +67,31 @@ export const PERF_CONFIG = {
   ],
 }
 
+/** Dựng lại clip từ dữ liệu đã lưu — SPEC §8. */
+export const CLIP_CONFIG = {
+  FPS_OPTIONS: [24, 30, 60],
+  DEFAULT_FPS: 30,
+  /** Màn trống trước chữ ký đầu tiên. */
+  INTRO_MS: 1500,
+  /** Giữ cảnh cuối (đủ chữ ký) trước khi hết clip. */
+  OUTRO_MS: 6000,
+  /** Gợi ý độ dài phần ký: bấy nhiêu ms mỗi chữ ký, kẹp trong [MIN, DEFAULT_MAX]. */
+  SUGGEST_MS_PER_SIG: 1200,
+  MIN_SPAN_S: 3,
+  DEFAULT_MAX_SPAN_S: 180,
+  MAX_SPAN_S: 3600,
+  /** Nhịp "thật": khoảng vắng dài hơn bấy nhiêu lần trung vị bị cắt bớt. */
+  REAL_GAP_CAP: 3,
+  /** Chữ ký đến dày hơn mức này thì tắt spotlight — hàng đợi sẽ dồn vô hạn. */
+  SPOTLIGHT_MIN_INTERVAL_MS: 900,
+  /** Thử theo thứ tự: avc → MP4 (dựng phim nào cũng mở được), còn lại → WebM. */
+  CODECS: ['avc', 'vp9', 'vp8'],
+  /** Cập nhật ảnh xem trước mỗi bấy nhiêu frame. */
+  PREVIEW_EVERY_FRAMES: 15,
+  MEDIA_LOAD_TIMEOUT_MS: 20_000,
+  SEEK_TIMEOUT_MS: 5000,
+}
+
 /** Font web cho tên. Mạng LAN không internet thì trình duyệt rơi về font hệ
  *  thống — vẫn hiện chữ, chỉ không đẹp bằng. */
 export const WEB_FONTS_HREF = 'https://fonts.googleapis.com/css2?family=Be+Vietnam+Pro:wght@600;800&family=Charm:wght@700&family=Dancing+Script:wght@700&family=Great+Vibes&family=Lobster&family=Montserrat:wght@700;900&family=Pacifico&display=swap'

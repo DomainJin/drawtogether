@@ -27,7 +27,17 @@ export function createScene() {
 
 /** Hàng đợi dài → rút ngắn để không ai phải chờ cả phút mới thấy chữ ký mình. */
 export function spotlightDuration(baseMs, queueLen) {
-  return queueLen > P.SPOTLIGHT_BUSY_QUEUE ? Math.max(P.SPOTLIGHT_MIN_MS, baseMs / 2) : baseMs
+  if (queueLen <= P.SPOTLIGHT_BUSY_QUEUE) return baseMs
+  // Không bao giờ dài hơn base: base đã dưới MIN thì giữ nguyên base.
+  return Math.min(baseMs, Math.max(P.SPOTLIGHT_MIN_MS, baseMs / 2))
+}
+
+/** Cảnh đã lắng: không còn ai chờ/đang spotlight, không còn hiệu ứng vào nào
+ *  chạy dở. (Chế độ trôi vẫn chuyển động — đó là trạng thái nghỉ của nó.) */
+export function sceneIsSettled(scene) {
+  if (scene.queue.length || scene.spot || scene.backdrop !== 1) return false
+  for (const e of scene.entries.values()) if (e.animate) return false
+  return true
 }
 
 /** Chữ ký đang hiện: status visible, giữ `maxVisible` cái mới nhất, cũ trước. */

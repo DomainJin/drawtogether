@@ -19,6 +19,11 @@ Spec kỹ thuật: [SPEC.md](SPEC.md).
 6. Tab **Quản lý**: duyệt / ẩn / xoá chữ ký, tải PNG từng cái, **ZIP tất cả**,
    **📸 Chụp màn show** (PNG đúng độ phân giải vùng LED).
 
+7. Sau sự kiện: tab **Quản lý** → **🎬 Dựng lại clip** → chọn nhịp, độ dài, fps,
+   chất lượng → **Dựng clip**. Video (MP4 H.264, hoặc WebM nếu máy không mã hoá
+   được H.264) tự tải về, đúng độ phân giải vùng LED. Cần Chrome/Edge trên máy
+   tính; giữ tab mở tới khi xong.
+
 Mở setup trên máy khác: **🔑 Link quản trị** (chứa khoá — ai có link đều sửa được).
 
 Nên bật **Duyệt trước khi hiện** (tab Trang ký) khi khán giả đông/lạ.

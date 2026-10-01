@@ -33,10 +33,18 @@ if errorlevel 1 (
   if errorlevel 1 ( echo LOI tao database - xem logs\db-setup.log & goto :fail )
 )
 
+rem Port bi chiem thi node thoat ngay va cua so dong mat - nguoi dung khong biet
+rem vi sao iPad khong vao duoc. Kiem tra truoc, bao ro.
+call :need_free_port %WB_SERVER_PORT% server || goto :fail
+call :need_free_port %WB_CLIENT_PORT% client || goto :fail
+
 rem --- 2. Server ------------------------------------------------------------
 echo [2/3] Chay server port %WB_SERVER_PORT%...
 set "PORT=%WB_SERVER_PORT%"
 set "DATABASE_URL=postgresql://whiteboard:whiteboard@localhost:%PG_PORT%/whiteboard"
+rem Media Performance (anh/video nen) nam trong data\ cung database: build lai
+rem goi chi thay app\, nen de mac dinh app\server\uploads la mat file sau moi lan cap nhat.
+set "PERF_MEDIA_DIR=%ROOT%data\media"
 start "whiteboard-server" /D "%ROOT%app\server" "%NODE%" src/index.js
 
 rem --- 3. Client ------------------------------------------------------------
@@ -58,4 +66,13 @@ exit /b 0
 echo.
 echo Khoi dong THAT BAI.
 pause
+exit /b 1
+
+rem %1 = port, %2 = ten dich vu. Tra errorlevel 1 neu port dang co app nghe.
+:need_free_port
+netstat -ano | findstr /r /c:":%1 .*LISTENING" > nul
+if errorlevel 1 exit /b 0
+echo LOI: port %1 (%2) dang bi chiem.
+echo   - Da chay start.bat roi? Chay stop.bat truoc.
+echo   - Hoac app khac dang dung port %1: tat app do, hoac doi port trong config.bat.
 exit /b 1
